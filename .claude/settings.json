@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 ntgen/selftest.py)",
+      "Bash(python3 ntgen/demo.py)",
+      "Bash(time python3 ntgen/selftest.py)",
+      "Bash(python3 -)",
+      "Bash(python3 -c ' *)",
+      "Bash(python3 fmt_templates.py)",
+      "Bash(python3 ntgen/graph_demo.py)",
+      "Bash(python3 /Users/amitgupta/Documents/VoltHacks/ntgen/graph_demo.py)",
+      "Bash(python3 ntgen/session_demo.py)",
+      "Bash(python3 ntgen/session_demo.py --interactive)"
+    ]
+  }
+}
