@@ -1,0 +1,5 @@
+flask>=2.3
+sympy>=1.12
+# gunicorn is only needed for the Render fallback deploy, not locally and
+# not on PythonAnywhere:
+# gunicorn>=21

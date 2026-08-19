@@ -25,19 +25,42 @@ from verify import safe_eval, CHECKERS, TemplateError
 MAX_SAMPLE_ATTEMPTS = 200
 
 
+def _fill(text: str, params: dict) -> str:
+    """Prose fields may reference params ({n}, {nm1}) so the student sees
+    concrete numbers instead of variable names. Hand-authored entries have no
+    params and may contain literal braces, so they pass through untouched."""
+    if not text or not params:
+        return text
+    try:
+        return text.format(**params)
+    except (KeyError, IndexError, ValueError) as e:
+        raise TemplateError(f"bad placeholder in prose field {text!r}: {e}") from e
+
+
 class Problem:
     def __init__(self, template, params, prompt, answer):
         self.template_id = template["id"]
         self.node = template["node"]
         self.params = params
         self.prompt = prompt
-        self.answer_format = template.get("answer_format", "")
-        self.hint = template.get("hint", "")
+        self.answer_format = _fill(template.get("answer_format", ""), params)
+        self.hint = _fill(template.get("hint", ""), params)
         self._answer = answer          # None for condition-checked templates
         self._template = template
 
-    def check(self, student_answer: str) -> bool:
-        """Grade a student's typed answer."""
+    def grade(self, student_answer: str) -> str:
+        """
+        Grade a typed answer: "correct", "wrong", or "unparseable".
+
+        "unparseable" means the input could not be read at all — a formatting
+        slip, not a math error. Per PROJECT.md 5.3 it does not count as an
+        attempt: callers must not pass it to record_answer, so it never
+        touches a streak. The boundary is exactly "what normalise() can
+        parse", not a typo detector: "banana" sympifies to a symbol and
+        grades wrong, while "??" fails to parse and grades unparseable.
+        """
+        if not str(student_answer).strip():
+            return "unparseable"
         checker_name = self._template.get("checker", "exact")
         checker = CHECKERS[checker_name]
         if checker_name == "condition":
@@ -51,10 +74,17 @@ class Problem:
             if checker_name == "exact" and also:
                 expected = [self._answer] + [safe_eval(e, self.params) for e in also]
         try:
-            return checker(student_answer, self.params, expected)
-        except (ValueError, TemplateError):
-            # unparseable input is wrong, not a crash
-            return False
+            return "correct" if checker(student_answer, self.params, expected) else "wrong"
+        except ValueError:
+            # normalise()/normalise_set()/normalise_pair() could not read it
+            return "unparseable"
+        except TemplateError:
+            # it parsed, but evaluating the condition on it broke — an attempt
+            return "wrong"
+
+    def check(self, student_answer: str) -> bool:
+        """Grade a student's typed answer. Only "correct" counts."""
+        return self.grade(student_answer) == "correct"
 
     def __repr__(self):
         shown = self._answer if self._answer is not None else "<condition-checked>"

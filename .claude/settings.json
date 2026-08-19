@@ -10,7 +10,17 @@
       "Bash(python3 ntgen/graph_demo.py)",
       "Bash(python3 /Users/amitgupta/Documents/VoltHacks/ntgen/graph_demo.py)",
       "Bash(python3 ntgen/session_demo.py)",
-      "Bash(python3 ntgen/session_demo.py --interactive)"
+      "Bash(python3 ntgen/session_demo.py --interactive)",
+      "Bash(git rm *)",
+      "Bash(pip3 install *)",
+      "Bash(python3 -c \"import flask; print\\('flask', flask.__version__\\)\")",
+      "Bash(git add *)",
+      "Bash(python3 web/leaktest.py)",
+      "Bash(python3 /Users/amitgupta/Documents/VoltHacks/web/leaktest.py)",
+      "Bash(python3 /Users/amitgupta/Documents/VoltHacks/ntgen/selftest.py)",
+      "Bash(python3 /private/tmp/claude-501/-Users-amitgupta-Documents-VoltHacks/0da91284-e66c-467f-a30a-17da3a827b38/scratchpad/readability_pass.py)",
+      "Bash(node --check /Users/amitgupta/Documents/VoltHacks/web/static/app.js)",
+      "Bash(python3 /private/tmp/claude-501/-Users-amitgupta-Documents-VoltHacks/0da91284-e66c-467f-a30a-17da3a827b38/scratchpad/build_proof_sheet.py)"
     ]
   }
 }

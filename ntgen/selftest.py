@@ -10,6 +10,8 @@ Checks per template:
   3. Formatting variants of the correct answer are also graded correct.
   4. A deliberately wrong answer is graded wrong.
   5. Garbage input is graded wrong without raising.
+  6. Unreadable input grades "unparseable" — a formatting slip must never
+     count as an attempt (PROJECT.md 5.3).
 
 Templates may carry a "selftest" block — and condition-checked templates
 MUST, because they have no stored answer the gate could use:
@@ -40,6 +42,26 @@ TRIALS = 300
 # every one of these is accepted when that IS the answer, and rejected when
 # a real answer exists.
 NONE_PHRASINGS = ["none", "None", "  none  ", "no solution", "DNE"]
+
+# Input normalise() cannot read. These must grade "unparseable" — not wrong,
+# not a crash — so a typo never resets a streak (PROJECT.md 5.3).
+UNREADABLE = ["", "??", "5x+"]
+
+
+def check_tristate(p, checker):
+    out = []
+    for junk in UNREADABLE:
+        # Base answers are compared as plain strings, so any non-empty input
+        # is readable there — only genuinely blank input is unparseable.
+        want = "wrong" if (checker == "string" and junk.strip()) else "unparseable"
+        try:
+            got = p.grade(junk)
+        except Exception as e:
+            out.append(f"grade({junk!r}) raised instead of returning: {e}")
+            continue
+        if got != want:
+            out.append(f"grade({junk!r}) -> {got!r}, expected {want!r}")
+    return out
 
 
 def fmt(value):
@@ -104,6 +126,14 @@ def test_template(tpl, rng):
         st = tpl.get("selftest", {})
         seen_prompts.add(p.prompt)
         seen_answers.add(str(p._answer))
+
+        # A brace surviving into student-facing text is a placeholder typo —
+        # the student would see "{nm1}" instead of a number.
+        for field, text in (("prompt", p.prompt),
+                            ("answer_format", p.answer_format),
+                            ("hint", p.hint)):
+            if "{" in text or "}" in text:
+                failures.append(f"unfilled placeholder in {field}: {text[:70]!r}")
 
         if checker == "condition":
             # No stored answer exists for this checker, so the template itself
@@ -186,6 +216,8 @@ def test_template(tpl, rng):
             except Exception as e:
                 failures.append(f"garbage raised instead of returning False: {e}")
 
+        failures += check_tristate(p, checker)
+
         if failures:
             break
 
@@ -253,6 +285,8 @@ def test_hand_authored(entry):
                 failures.append(f"garbage accepted: {junk!r}")
         except Exception as e:
             failures.append(f"garbage raised instead of returning False: {e}")
+
+    failures += check_tristate(p, entry.get("checker", "exact"))
 
     return failures
 

@@ -87,8 +87,8 @@
     {
       "id": "primes_trial_bound_01",
       "node": "primes",
-      "prompt": "To decide whether {n} is prime by trial division, what is the largest prime you actually need to test?",
-      "answer_format": "A single prime.",
+      "prompt": "You want to check whether {n} is prime by testing possible divisors one at a time. What is the largest prime you would actually need to test?",
+      "answer_format": "A single prime number.",
       "params": {
         "mode": {
           "type": "choice",
@@ -119,8 +119,8 @@
     {
       "id": "factorization_exponent_01",
       "node": "factorization",
-      "prompt": "In the prime factorization of {n}, what is the exponent of {p}?",
-      "answer_format": "A single non-negative integer.",
+      "prompt": "Break {n} into its prime factors. How many times does the prime {p} appear? (This count is called the exponent of {p} in the prime factorization.)",
+      "answer_format": "A whole number (0 counts).",
       "params": {
         "p": {
           "type": "choice",
@@ -290,7 +290,7 @@
     {
       "id": "euclidean_steps_01",
       "node": "euclidean",
-      "prompt": "How many division steps does the Euclidean algorithm take on ({a}, {b})? Count each replacement of (a, b) by (b, a mod b) as one step, including the final step that produces remainder 0.",
+      "prompt": "Run the Euclidean algorithm on {a} and {b}. How many division steps does it take? (Each line of the form bigger = quotient \u00b7 smaller + remainder counts as one step, including the final line where the remainder is 0.)",
       "answer_format": "A single positive integer.",
       "params": {
         "a": {
@@ -307,7 +307,7 @@
       "sampler_constraint": "a > b",
       "solution": "euclid_steps(a, b)",
       "checker": "exact",
-      "hint": "Write out the divisions one under another and count the lines. The last line is the one with remainder 0.",
+      "hint": "Write the divisions one under another and count the lines. The last line is the one where the remainder comes out 0.",
       "design_note": "Step-counting questions are ambiguous unless the counting convention is stated, so the prompt states it. euclid_steps in verify.py is the reference implementation and matches that wording exactly; the sampler forces a > b so there is no ambiguous leading swap."
     },
     {
@@ -477,8 +477,8 @@
     {
       "id": "congruence_residue_01",
       "node": "congruence",
-      "prompt": "Find the residue of {a} modulo {n} \u2014 the r with 0 <= r < {n} such that {a} = {n}q + r.",
-      "answer_format": "A single integer between 0 and n-1.",
+      "prompt": "What is the remainder when {a} is divided by {n}? (In modular arithmetic this remainder is called the residue of {a} mod {n}.)",
+      "answer_format": "A single integer from 0 to {nm1}.",
       "params": {
         "n": {
           "type": "int",
@@ -491,14 +491,17 @@
           "max": 500
         }
       },
+      "derived": {
+        "nm1": "n - 1"
+      },
       "solution": "a % n",
       "checker": "exact",
-      "hint": "Subtract the largest multiple of n that fits inside a. Whatever is left over is the residue."
+      "hint": "Subtract the biggest multiple of {n} that still fits inside {a}. Whatever is left is the remainder."
     },
     {
       "id": "congruence_are_congruent_01",
       "node": "congruence",
-      "prompt": "Are {a} and {b} congruent modulo {n}?",
+      "prompt": "Do {a} and {b} leave the same remainder when divided by {n}? (When they do, we say {a} and {b} are congruent modulo {n}.)",
       "answer_format": "Answer 1 for yes, 0 for no.",
       "params": {
         "n": {
@@ -532,14 +535,14 @@
       },
       "solution": "1 if (a - b) % n == 0 else 0",
       "checker": "exact",
-      "hint": "a = b (mod n) means exactly that n divides a - b. Subtract and test divisibility.",
+      "hint": "Two numbers are congruent mod {n} exactly when {n} divides their difference. Subtract {a} from {b} and test whether {n} goes in evenly.",
       "design_note": "mode makes it a genuine 50/50 yes/no split. b is always built by adding a multiple of n to a, so the numbers look unrelated but the congruent cases really are congruent."
     },
     {
       "id": "mod_arith_reduce_01",
       "node": "mod_arith",
-      "prompt": "Compute ({a}*{b} + {c}) mod {n}.",
-      "answer_format": "A single integer between 0 and n-1.",
+      "prompt": "What is the remainder when {a}\u00b7{b} + {c} is divided by {n}?",
+      "answer_format": "A single integer from 0 to {nm1}.",
       "params": {
         "a": {
           "type": "int",
@@ -562,15 +565,18 @@
           "max": 30
         }
       },
+      "derived": {
+        "nm1": "n - 1"
+      },
       "solution": "(a*b + c) % n",
       "checker": "exact",
-      "hint": "Reduce a and b mod n BEFORE multiplying \u2014 congruence survives addition and multiplication. The full product never needs to exist.",
+      "hint": "Replace {a} and {b} by their remainders mod {n} BEFORE multiplying \u2014 remainders survive addition and multiplication. The full product never needs to exist.",
       "distractor_note": "mod_arith's signature error (illegal cancellation) needs a division-shaped prompt; that distractor template comes in batch 1c. This one drills reduce-early."
     },
     {
       "id": "mod_arith_cancellation_01",
       "node": "mod_arith",
-      "prompt": "You are told {c}x = {c}y (mod {n}). Cancelling {c} from both sides is NOT valid modulo {n}, but it is valid modulo some smaller number m \u2014 that is, you may conclude x = y (mod m). What is the largest such m?",
+      "prompt": "You are told that {c}\u00b7x and {c}\u00b7y leave the same remainder when divided by {n}. You may NOT conclude that x and y do \u2014 cancelling the {c} is not allowed mod {n}. But cancelling IS valid modulo some smaller number m: you may conclude that x and y leave the same remainder when divided by m. What is the largest such m?",
       "answer_format": "A single positive integer.",
       "params": {
         "c": {
@@ -587,7 +593,7 @@
       "sampler_constraint": "gcd(c, n) > 1 and n // gcd(c, n) > 1",
       "solution": "n // gcd(c, n)",
       "checker": "exact",
-      "hint": "From n | c(x - y), divide through by g = gcd(c, n). Since n/g and c/g share no factor, n/g must divide x - y.",
+      "hint": "Since {n} divides {c}\u00b7(x - y), divide both {c} and {n} by g = gcd({c}, {n}). Whatever is left of {n} must divide x - y.",
       "distractor_note": "THE distractor for this node. A student who cancels naively concludes x = y (mod n) and answers n. That is the illegal-cancellation mistake from PROJECT.md 4.4, and the sampler guarantees it is always wrong here.",
       "distractor_expr": "n",
       "design_note": "The sampler forces gcd(c, n) > 1 so cancellation is never legal mod n, and forces n/gcd > 1 so the true conclusion is not the vacuous 'mod 1'."
@@ -595,8 +601,8 @@
     {
       "id": "mod_exp_large_01",
       "node": "mod_exp",
-      "prompt": "Compute {a}^{k} mod {n}.",
-      "answer_format": "A single integer between 0 and n-1.",
+      "prompt": "What is the remainder when {a}^{k} is divided by {n}?",
+      "answer_format": "A single integer from 0 to {nm1}.",
       "params": {
         "a": {
           "type": "int",
@@ -614,10 +620,13 @@
           "max": 200
         }
       },
+      "derived": {
+        "nm1": "n - 1"
+      },
       "sampler_constraint": "gcd(a, n) == 1",
       "solution": "pow(a, k, n)",
       "checker": "exact",
-      "hint": "You do not need the full power. Reduce mod n at every squaring step so the numbers stay small.",
+      "hint": "Never compute the full power. Square step by step, replacing each result by its remainder mod {n}, so the numbers stay small.",
       "distractor_note": "The classic error is reducing the EXPONENT mod n instead of the base. If the student answers pow(a, k % n, n), hint on that specifically.",
       "distractor_expr": "pow(a, k % n, n)"
     },
@@ -646,8 +655,8 @@
     {
       "id": "mod_inverse_find_01",
       "node": "mod_inverse",
-      "prompt": "Find the inverse of {a} modulo {n} \u2014 the x with 0 <= x < {n} and {a}x = 1 (mod {n}).",
-      "answer_format": "A single integer between 0 and n-1. If no inverse exists, answer: none",
+      "prompt": "Find a number x between 0 and {nm1} for which {a}\u00b7x leaves remainder 1 when divided by {n}. (This x is called the inverse of {a} mod {n}. It may not exist.)",
+      "answer_format": "A single integer from 0 to {nm1}. If no inverse exists, answer: none",
       "params": {
         "n": {
           "type": "choice",
@@ -663,17 +672,20 @@
           "values": [0, 1]
         }
       },
+      "derived": {
+        "nm1": "n - 1"
+      },
       "sampler_constraint": "a % n > 1 and ((gcd(a, n) == 1) if mode == 1 else (gcd(a, n) > 1))",
       "solution": "inv_mod(a, n)",
       "checker": "exact",
-      "hint": "An inverse exists only when gcd(a, n) = 1 \u2014 check that first. If it does, run the extended Euclidean algorithm on a and n; the coefficient of a is the inverse.",
+      "hint": "An inverse exists only when gcd({a}, {n}) = 1 \u2014 check that first. If it passes, run the extended Euclidean algorithm on {a} and {n}; the coefficient of {a} is the inverse.",
       "design_note": "mode splits the samples roughly in half between 'inverse exists' and 'no inverse exists', as the handoff requires. The no-inverse case returns the sentinel, so a student who correctly answers 'none' is graded correct \u2014 deciding existence IS the skill this node assesses, so it cannot be a trick question with no way to express the right answer. Prime moduli only ever sample with mode=1, which is correct: an inverse always exists mod a prime."
     },
     {
       "id": "mod_inverse_solve_01",
       "node": "mod_inverse",
-      "prompt": "Solve {a}x = {b} (mod {n}) for x with 0 <= x < {n}.",
-      "answer_format": "A single integer between 0 and n-1.",
+      "prompt": "Find the number x, from 0 to {nm1}, for which {a}\u00b7x and {b} leave the same remainder when divided by {n}.",
+      "answer_format": "A single integer from 0 to {nm1}.",
       "params": {
         "n": {
           "type": "choice",
@@ -690,16 +702,19 @@
           "max": 40
         }
       },
+      "derived": {
+        "nm1": "n - 1"
+      },
       "sampler_constraint": "gcd(a, n) == 1 and a % n > 1 and b < n and b % n != 0",
       "solution": "(inv_mod(a, n) * b) % n",
       "checker": "exact",
-      "hint": "Multiply both sides by the inverse of a mod n. Find that inverse with the extended Euclidean algorithm, then reduce.",
+      "hint": "Multiply both sides by the inverse of {a} mod {n}. Find that inverse with the extended Euclidean algorithm, then take the remainder.",
       "design_note": "gcd(a, n) = 1 is forced here, so the solution is unique \u2014 this is the well-behaved sibling of linear_congruence, where the gcd > 1 case produces several solutions."
     },
     {
       "id": "bezout_any_pair_01",
       "node": "bezout",
-      "prompt": "Find integers x and y such that {a}x + {b}y = gcd({a}, {b}).",
+      "prompt": "Find integers x and y (negatives are allowed) with {a}\u00b7x + {b}\u00b7y = {g}. ({g} is gcd({a}, {b}) \u2014 Bezout's identity says such x and y always exist.)",
       "answer_format": "Two integers separated by a comma, e.g. 7, -3",
       "params": {
         "a": {
@@ -736,7 +751,7 @@
     {
       "id": "bezout_smallest_combination_01",
       "node": "bezout",
-      "prompt": "What is the smallest POSITIVE integer that can be written as {a}x + {b}y for some integers x and y?",
+      "prompt": "Using any integers x and y (negatives allowed), you can build numbers of the form {a}\u00b7x + {b}\u00b7y. What is the smallest POSITIVE number you can build?",
       "answer_format": "A single positive integer.",
       "params": {
         "a": {
@@ -761,7 +776,7 @@
     {
       "id": "linear_diophantine_smallest_x_01",
       "node": "linear_diophantine",
-      "prompt": "Find the smallest POSITIVE integer x such that {a}x + {b}y = {c} has an integer solution y.",
+      "prompt": "Find the smallest POSITIVE integer x for which {a}\u00b7x + {b}\u00b7y = {c} has an integer solution y (y may be negative).",
       "answer_format": "A single positive integer.",
       "params": {
         "a": {
@@ -793,7 +808,7 @@
     {
       "id": "linear_diophantine_solvable_01",
       "node": "linear_diophantine",
-      "prompt": "Does {a}x + {b}y = {c} have a solution in integers?",
+      "prompt": "Can {a}\u00b7x + {b}\u00b7y = {c} be solved with integers x and y (negatives allowed)?",
       "answer_format": "Answer 1 for yes, 0 for no.",
       "params": {
         "a": {
@@ -834,7 +849,7 @@
     {
       "id": "linear_diophantine_any_pair_01",
       "node": "linear_diophantine",
-      "prompt": "Find integers x and y such that {a}x + {b}y = {c}.",
+      "prompt": "Find integers x and y (negatives are allowed) with {a}\u00b7x + {b}\u00b7y = {c}.",
       "answer_format": "Two integers separated by a comma, e.g. 7, -3",
       "params": {
         "a": {
@@ -877,8 +892,8 @@
     {
       "id": "linear_congruence_all_01",
       "node": "linear_congruence",
-      "prompt": "Find ALL solutions x with 0 <= x < {n} to {a}x = {b} (mod {n}).",
-      "answer_format": "All solutions separated by commas. If there are none, answer: none",
+      "prompt": "Find ALL numbers x from 0 to {nm1} for which {a}\u00b7x and {b} leave the same remainder when divided by {n}. (There may be one solution, several, or none.)",
+      "answer_format": "All solutions separated by commas, e.g. 4, 11, 18. If there are none, answer: none",
       "params": {
         "n": {
           "type": "choice",
@@ -897,18 +912,19 @@
       },
       "sampler_constraint": "a < n and gcd(a, n) > 1 and (a*t) % n != a % n",
       "derived": {
-        "b": "(a*t) % n"
+        "b": "(a*t) % n",
+        "nm1": "n - 1"
       },
       "solution": "sorted([x for x in range(n) if (a*x - b) % n == 0])",
       "checker": "unordered_set",
-      "hint": "Let g = gcd(a, n). If g divides b there are exactly g solutions, not one. Find one, then add n/g repeatedly.",
+      "hint": "Let g = gcd({a}, {n}). If g divides {b} there are exactly g solutions, not one. Find one, then keep adding {n} divided by g.",
       "design_note": "The sampler forces gcd(a,n) > 1 so this template ALWAYS produces the multi-solution case. That is the whole point of the node: students who only learned the modular-inverse shortcut will confidently give one answer and be wrong."
     },
     {
       "id": "linear_congruence_none_01",
       "node": "linear_congruence",
-      "prompt": "Find ALL solutions x with 0 <= x < {n} to {a}x = {b} (mod {n}).",
-      "answer_format": "All solutions separated by commas. If there are none, answer: none",
+      "prompt": "Find ALL numbers x from 0 to {nm1} for which {a}\u00b7x and {b} leave the same remainder when divided by {n}. (There may be one solution, several, or none.)",
+      "answer_format": "All solutions separated by commas, e.g. 4, 11, 18. If there are none, answer: none",
       "params": {
         "n": {
           "type": "choice",
@@ -925,18 +941,21 @@
           "max": 21
         }
       },
+      "derived": {
+        "nm1": "n - 1"
+      },
       "sampler_constraint": "a < n and b < n and gcd(a, n) > 1 and b % gcd(a, n) != 0",
       "solution": "sorted([x for x in range(n) if (a*x - b) % n == 0])",
       "checker": "unordered_set",
       "constant_answer_by_design": true,
-      "hint": "Let g = gcd(a, n). Every value of ax is a multiple of g modulo n, so if g does not divide b there is nothing x can be. Check that divisibility before hunting for solutions.",
+      "hint": "Let g = gcd({a}, {n}). Every value of {a}\u00b7x is a multiple of g mod {n}, so if g does not divide {b}, nothing works. Check that before hunting for solutions.",
       "design_note": "The companion to linear_congruence_all_01: that template always has several solutions, this one always has NONE. Without this case a student could answer every linear congruence question with a list of numbers and never learn to check solvability first."
     },
     {
       "id": "linear_congruence_unique_01",
       "node": "linear_congruence",
-      "prompt": "Find ALL solutions x with 0 <= x < {n} to {a}x = {b} (mod {n}).",
-      "answer_format": "All solutions separated by commas. If there are none, answer: none",
+      "prompt": "Find ALL numbers x from 0 to {nm1} for which {a}\u00b7x and {b} leave the same remainder when divided by {n}. (There may be one solution, several, or none.)",
+      "answer_format": "All solutions separated by commas, e.g. 4, 11, 18. If there are none, answer: none",
       "params": {
         "n": {
           "type": "choice",
@@ -953,17 +972,20 @@
           "max": 22
         }
       },
+      "derived": {
+        "nm1": "n - 1"
+      },
       "sampler_constraint": "a < n and b < n and gcd(a, n) == 1",
       "solution": "sorted([x for x in range(n) if (a*x - b) % n == 0])",
       "checker": "unordered_set",
-      "hint": "When gcd(a, n) = 1 there is exactly one solution: multiply both sides by the inverse of a.",
+      "hint": "When gcd({a}, {n}) = 1 there is exactly one solution: multiply both sides by the inverse of {a} mod {n}.",
       "design_note": "The third face of this node. all_01 always has several solutions, none_01 never has any, and this one always has exactly one. A student who has only seen the multi-solution drill must still recognise the ordinary case."
     },
     {
       "id": "crt_two_coprime_01",
       "node": "crt",
-      "prompt": "Find the smallest non-negative integer x with x = {r1} (mod {m1}) and x = {r2} (mod {m2}).",
-      "answer_format": "A single non-negative integer.",
+      "prompt": "Find the smallest number (0 counts) that leaves remainder {r1} when divided by {m1} AND leaves remainder {r2} when divided by {m2}.",
+      "answer_format": "A single integer, 0 allowed.",
       "params": {
         "m1": {
           "type": "choice",
@@ -987,14 +1009,14 @@
       "sampler_constraint": "gcd(m1, m2) == 1 and r1 < m1 and r2 < m2",
       "solution": "crt_value([m1, m2], [r1, r2])",
       "checker": "exact",
-      "hint": "List the numbers congruent to the first condition and test each against the second, or build the solution directly with the CRT construction. The answer is unique modulo m1*m2.",
+      "hint": "List the numbers that leave remainder {r1} when divided by {m1}: {r1}, then {r1}+{m1}, then {r1}+2\u00b7{m1}, and so on \u2014 and test each against the second condition. The answer is unique below {m1}\u00b7{m2}.",
       "distractor_note": "Common error: answering r1 + r2, or a value that satisfies only one of the two congruences."
     },
     {
       "id": "crt_noncoprime_01",
       "node": "crt",
-      "prompt": "Find the smallest non-negative integer x with x = {r1} (mod {m1}) and x = {r2} (mod {m2}), or determine that no such x exists.",
-      "answer_format": "A single non-negative integer. If the system has no solution, answer: none",
+      "prompt": "Find the smallest number (0 counts) that leaves remainder {r1} when divided by {m1} AND leaves remainder {r2} when divided by {m2} \u2014 or decide that no such number exists.",
+      "answer_format": "A single integer, 0 allowed. If no number satisfies both conditions, answer: none",
       "params": {
         "m1": {
           "type": "choice",
@@ -1026,14 +1048,14 @@
       "sampler_constraint": "d > 1 and r1 < m1 and (mode == 1 or shift % d != 0)",
       "solution": "crt_value([m1, m2], [r1, r2])",
       "checker": "exact",
-      "hint": "When the moduli share a factor d, the system is solvable only if the two residues agree modulo d. Check that first; if they agree, the solution is unique modulo lcm(m1, m2), not m1*m2.",
+      "hint": "The two divisors share the factor {d}. A solution exists only if both remainders agree mod {d} \u2014 check that first. If they do, the pattern repeats every lcm({m1}, {m2}), not every {m1}\u00b7{m2}.",
       "design_note": "The moduli here are deliberately NOT coprime, which the curriculum teaches explicitly rather than hiding. mode produces consistent and inconsistent systems in roughly equal numbers; the inconsistent ones return the sentinel so 'none' is a gradeable correct answer. A student who assumes CRT always applies will answer with a number every time and fail half of these."
     },
     {
       "id": "crt_three_01",
       "node": "crt",
-      "prompt": "Find the smallest non-negative integer x with x = {r1} (mod {m1}), x = {r2} (mod {m2}), and x = {r3} (mod {m3}).",
-      "answer_format": "A single non-negative integer.",
+      "prompt": "Find the smallest number (0 counts) that leaves remainder {r1} when divided by {m1}, remainder {r2} when divided by {m2}, AND remainder {r3} when divided by {m3}.",
+      "answer_format": "A single integer, 0 allowed.",
       "params": {
         "m1": {
           "type": "choice",
@@ -1066,13 +1088,13 @@
       "sampler_constraint": "gcd(m1, m2) == 1 and gcd(m1, m3) == 1 and gcd(m2, m3) == 1 and r1 < m1 and r2 < m2 and r3 < m3",
       "solution": "crt_value([m1, m2, m3], [r1, r2, r3])",
       "checker": "exact",
-      "hint": "Combine the first two congruences into a single one modulo m1*m2, then combine that result with the third."
+      "hint": "Combine the first two conditions into a single one mod {m1}\u00b7{m2}, then combine that result with the third."
     },
     {
       "id": "fermat_little_exp_01",
       "node": "fermat_little",
-      "prompt": "Compute {a}^{k} mod {p}, where {p} is prime.",
-      "answer_format": "A single integer between 0 and p-1.",
+      "prompt": "What is the remainder when {a}^{k} is divided by {p}? ({p} is prime.)",
+      "answer_format": "A single integer from 0 to {pm1}.",
       "params": {
         "pi": {
           "type": "int",
@@ -1091,20 +1113,21 @@
         }
       },
       "derived": {
-        "p": "prime(pi)"
+        "p": "prime(pi)",
+        "pm1": "p - 1"
       },
       "sampler_constraint": "a % p > 1",
       "solution": "pow(a, k, p)",
       "checker": "exact",
-      "hint": "Fermat: a^(p-1) = 1 (mod p) when p does not divide a. So reduce the EXPONENT mod p-1, not mod p, then finish the small power by hand.",
+      "hint": "Fermat's little theorem: {a}^{pm1} leaves remainder 1 when divided by {p}. So reduce the EXPONENT mod {pm1} \u2014 not mod {p} \u2014 then finish the small power by hand.",
       "distractor_note": "The classic error is reducing the exponent mod p instead of mod p-1, i.e. answering pow(a, k % p, p). Detect that value and hint on the p-1.",
       "distractor_expr": "pow(a, k % p, p)"
     },
     {
       "id": "fermat_inverse_01",
       "node": "fermat_little",
-      "prompt": "{p} is prime. Use Fermat's little theorem to find the inverse of {a} modulo {p} \u2014 the x with 0 <= x < {p} and {a}x = 1 (mod {p}).",
-      "answer_format": "A single integer between 0 and p-1.",
+      "prompt": "{p} is prime. Find the number x, between 0 and {pm1}, for which {a}\u00b7x leaves remainder 1 when divided by {p}. (Fermat's little theorem gives a shortcut.)",
+      "answer_format": "A single integer from 0 to {pm1}.",
       "params": {
         "pi": {
           "type": "int",
@@ -1118,18 +1141,20 @@
         }
       },
       "derived": {
-        "p": "prime(pi)"
+        "p": "prime(pi)",
+        "pm1": "p - 1",
+        "pm2": "p - 2"
       },
       "sampler_constraint": "a % p > 1",
       "solution": "pow(a, p - 2, p)",
       "checker": "exact",
-      "hint": "Fermat gives a^(p-1) = 1 (mod p). Split off one factor of a: a * a^(p-2) = 1, so a^(p-2) IS the inverse.",
+      "hint": "Fermat says {a}^{pm1} leaves remainder 1 mod {p}. Peel off one factor: {a}\u00b7{a}^{pm2} = 1, so {a}^{pm2} IS the inverse.",
       "design_note": "Connects fermat_little to mod_inverse, which are separate nodes with a shared edge in the DAG. It also gives students a second, independent route to an inverse besides the extended Euclidean algorithm."
     },
     {
       "id": "totient_compute_01",
       "node": "totient",
-      "prompt": "Compute phi({n}), where phi is Euler's totient function.",
+      "prompt": "Compute phi({n}) \u2014 Euler's totient of {n}: the count of numbers from 1 to {n} that share no common factor with {n} (other than 1). ({n} is large on purpose: use the formula, not a list.)",
       "answer_format": "A single positive integer.",
       "params": {
         "p": {
@@ -1156,7 +1181,7 @@
       },
       "solution": "totient(n)",
       "checker": "exact",
-      "hint": "Factor n, then use phi(p^e) = p^e - p^(e-1) on each prime power and multiply the results \u2014 phi is multiplicative.",
+      "hint": "Factor {n}, then use the rule phi(p^e) = p^e - p^(e-1) on each prime power and multiply the results together \u2014 phi is multiplicative.",
       "distractor_note": "Common error: treating prime powers like primes, phi(p^e) = p^e - 1. For n = p^e * q^f that predicts (p**e - 1)*(q**f - 1).",
       "distractor_expr": "(p**e - 1)*(q**f - 1)"
     },
@@ -1196,8 +1221,8 @@
     {
       "id": "euler_theorem_exp_01",
       "node": "euler_theorem",
-      "prompt": "Compute {a}^{k} mod {n}. (Note: {n} is composite.)",
-      "answer_format": "A single integer between 0 and n-1.",
+      "prompt": "What is the remainder when {a}^{k} is divided by {n}? ({n} is not prime, so Fermat's little theorem does not apply directly \u2014 Euler's theorem does.)",
+      "answer_format": "A single integer from 0 to {nm1}.",
       "params": {
         "n": {
           "type": "int",
@@ -1215,18 +1240,21 @@
           "max": 1000000
         }
       },
+      "derived": {
+        "nm1": "n - 1"
+      },
       "sampler_constraint": "gcd(a, n) == 1 and not isprime(n) and a % n > 1",
       "solution": "pow(a, k, n)",
       "checker": "exact",
-      "hint": "Euler: a^phi(n) = 1 (mod n) when gcd(a, n) = 1. Factor n, compute phi(n), reduce the exponent mod phi(n), then finish by hand.",
+      "hint": "Euler's theorem: raising {a} to the power phi({n}) gives remainder 1, whenever gcd({a}, {n}) = 1. Factor {n}, compute phi({n}), reduce the exponent mod phi({n}), then finish by hand.",
       "distractor_note": "Classic error: reducing the exponent mod n or mod n-1 (Fermat-style) instead of mod phi(n). The sampler keeps n composite so that shortcut is always wrong to attempt.",
       "distractor_expr": "pow(a, k % n, n)"
     },
     {
       "id": "euler_theorem_reduce_exponent_01",
       "node": "euler_theorem",
-      "prompt": "You want to compute {a}^{k} mod {n} using Euler's theorem. Euler says to reduce the exponent modulo phi({n}). What is the reduced exponent?",
-      "answer_format": "A single non-negative integer.",
+      "prompt": "You want the remainder of {a}^{k} divided by {n}, using Euler's theorem. The theorem lets you shrink the exponent: replace {k} with its remainder mod phi({n}). What is that smaller exponent?",
+      "answer_format": "A whole number (0 counts).",
       "params": {
         "n": {
           "type": "int",
@@ -1247,7 +1275,7 @@
       "sampler_constraint": "gcd(a, n) == 1 and not isprime(n) and k % totient(n) != 0",
       "solution": "k % totient(n)",
       "checker": "exact",
-      "hint": "Compute phi(n) from the factorization of n, then take k mod phi(n).",
+      "hint": "Compute phi({n}) from the factorization of {n}, then take the remainder of {k} divided by phi({n}).",
       "distractor_note": "The classic error is reducing mod n instead of mod phi(n). Detect k % n and hint on the difference.",
       "distractor_expr": "k % n",
       "design_note": "Isolates the STEP students get wrong rather than the final answer, so a wrong answer here localises the misconception precisely. k % phi(n) != 0 is forced so the answer is never the ambiguous 0, which could equally well be written phi(n)."
@@ -1255,7 +1283,7 @@
     {
       "id": "order_mult_01",
       "node": "order",
-      "prompt": "What is the multiplicative order of {a} modulo {n}? (The smallest k > 0 with {a}^k = 1 mod {n}.)",
+      "prompt": "Keep multiplying by {a}, always keeping only the remainder mod {n}: {a}, {a}^2, {a}^3, and so on. How many steps until the remainder first equals 1? (That count is the multiplicative order of {a} mod {n}.)",
       "answer_format": "A single positive integer.",
       "params": {
         "n": {
@@ -1272,7 +1300,7 @@
       "sampler_constraint": "gcd(a, n) == 1 and a % n > 1",
       "solution": "n_order(a, n)",
       "checker": "exact",
-      "hint": "The order must divide phi(n). Compute phi(n), list its divisors, and test them from smallest up \u2014 never test every exponent.",
+      "hint": "The order must divide phi({n}). Compute phi({n}), list its divisors, and test only those exponents, smallest first.",
       "distractor_note": "Common error: answering phi(n) itself without checking whether a smaller divisor of phi(n) already gives 1.",
       "distractor_expr": "totient(n)"
     },
@@ -1297,8 +1325,8 @@
     {
       "id": "wilson_factorial_01",
       "node": "wilson",
-      "prompt": "Compute {m}! mod {p}.",
-      "answer_format": "A single integer.",
+      "prompt": "What is the remainder when {m}! is divided by {p}? ({m}! means the product 1\u00b72\u00b73\u00b7...\u00b7{m}.)",
+      "answer_format": "A single whole number.",
       "params": {
         "p": {
           "type": "choice",
@@ -1311,7 +1339,7 @@
       "solution": "factorial(m) % p",
       "checker": "exact",
       "also_accept": ["(factorial(m) % p) - p"],
-      "hint": "If p is prime, pair every factor with its inverse mod p \u2014 only 1 and p-1 have no partner (Wilson's theorem). If p is composite, look for two distinct factors of p hiding inside the factorial.",
+      "hint": "If {p} is prime, every factor of the product pairs off with its inverse mod {p} \u2014 only 1 and {m} are their own partners (Wilson's theorem). If {p} is composite, look for two factors of {p} hiding inside the factorial.",
       "design_note": "also_accept lets a student answer -1 for prime p \u2014 the actual content of Wilson's theorem \u2014 instead of the canonical p-1. The value list mixes primes and composites so 'it is always -1' fails: for composite p > 4 the answer is 0.",
       "distractor_note": "Students who assume Wilson holds for composites will answer p-1 (or -1) on a composite p; the true answer there is 0.",
       "distractor_expr": "p - 1"
@@ -1319,7 +1347,7 @@
     {
       "id": "wilson_primality_01",
       "node": "wilson",
-      "prompt": "You compute ({p}-1)! mod {p} and get {v}. Based on Wilson's theorem, is {p} prime?",
+      "prompt": "You work out {m}! (that is, 1\u00b72\u00b73\u00b7...\u00b7{m}) and take the remainder after dividing by {p}. The remainder is {v}. According to Wilson's theorem, is {p} prime?",
       "answer_format": "Answer 1 for yes, 0 for no.",
       "params": {
         "p": {
@@ -1333,7 +1361,7 @@
       },
       "solution": "1 if isprime(p) else 0",
       "checker": "exact",
-      "hint": "Wilson's theorem is an if-and-only-if: (p-1)! = -1 (mod p) exactly when p is prime. Note that -1 mod p is written p-1. Any other value means composite.",
+      "hint": "Wilson's theorem cuts both ways: the remainder is {m} (that is, -1 mod {p}) exactly when {p} is prime. Any other value means composite.",
       "design_note": "Runs Wilson in the direction that makes it a primality CRITERION rather than a computation, which is the characterisation half of the node. The value list starts at 5 because p = 4 is the one composite where (p-1)! is not 0 mod p."
     }
   ]

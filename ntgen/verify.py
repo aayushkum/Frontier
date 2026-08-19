@@ -267,8 +267,15 @@ def check_exact(student: str, params: dict, expected) -> bool:
     # sides: a student saying "none" when a value exists is wrong, and a
     # student giving a number when none exists is wrong.
     want_none = any(is_sentinel(w) for w in wants)
-    if want_none or said_no_solution(student):
-        return want_none and said_no_solution(student)
+    if said_no_solution(student):
+        return want_none
+    if want_none:
+        # No value exists, and the student gave something other than "none".
+        # It still has to be READABLE before it can be called wrong: a parse
+        # failure here must raise, so it grades "unparseable" rather than
+        # costing an attempt (PROJECT.md 5.3).
+        normalise(student)
+        return False
 
     got = normalise(student)
     return any(
@@ -310,8 +317,12 @@ def check_unordered_set(student: str, params: dict, expected) -> bool:
     want_none = is_sentinel(expected) or (
         isinstance(expected, (list, tuple, set)) and len(expected) == 0
     )
-    if want_none or said_no_solution(student):
-        return want_none and said_no_solution(student)
+    if said_no_solution(student):
+        return want_none
+    if want_none:
+        # same as check_exact: unreadable input must raise, not grade wrong
+        normalise_set(student)
+        return False
 
     got = normalise_set(student)
     want = {sympy.sympify(v, rational=True) for v in expected}

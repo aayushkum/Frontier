@@ -27,7 +27,7 @@
     {
       "id": "pigeonhole_consecutive_block_01",
       "node": "pigeonhole_nt",
-      "prompt": "What is the smallest n such that EVERY list of n integers contains a block of consecutive terms whose sum is divisible by 9?",
+      "prompt": "What is the smallest n such that EVERY list of n integers contains a block of consecutive terms (one or more entries, next to each other in the list) whose sum is divisible by 9?",
       "answer_format": "A single positive integer.",
       "answer": "9",
       "checker": "exact",
@@ -49,7 +49,7 @@
     {
       "id": "pigeonhole_generalised_count_01",
       "node": "pigeonhole_nt",
-      "prompt": "You choose 30 integers. What is the largest k for which you can be GUARANTEED that some remainder class mod 7 contains at least k of your integers?",
+      "prompt": "You pick any 30 integers. Sort them into 7 groups by their remainder when divided by 7. What is the largest k such that, no matter which 30 integers you picked, some group must end up holding at least k of them?",
       "answer_format": "A single positive integer.",
       "answer": "5",
       "checker": "exact",

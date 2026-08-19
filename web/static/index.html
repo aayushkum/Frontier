@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Number Theory Frontier</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230e1320'/><circle cx='16' cy='16' r='9' fill='none' stroke='%23fbbf24' stroke-width='3.5'/></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <div class="brand">Number Theory <span>Frontier</span></div>
+  <div class="who" id="who" hidden>
+    <span id="who-name"></span>
+    <a href="#" id="switch-user">switch</a>
+  </div>
+</header>
+
+<!-- ===================== screen 1: login ===================== -->
+<section id="screen-login">
+  <!-- shown instead of the login form when /api/health is unreachable —
+       classically: the page was opened via Live Server / a static server
+       instead of the Flask app that owns the grading -->
+  <div class="card login-card warn-card" id="server-warning" hidden>
+    <h1>Can't reach the math server</h1>
+    <p class="muted">
+      This page was loaded from <code id="warn-origin"></code>, which serves files
+      but can't grade anything. That usually means it was opened through
+      VS Code's Live Server instead of the app itself.
+    </p>
+    <p>Start the app server from the project folder:</p>
+    <pre><code>python3 web/app.py</code></pre>
+    <p>then open <a href="http://127.0.0.1:5000">http://127.0.0.1:5000</a> directly.</p>
+  </div>
+
+  <div class="card login-card" id="login-card">
+    <h1>Find your frontier.</h1>
+    <p class="muted">
+      Six questions locate exactly where your number theory stops.
+      Then you practise right at that edge — never behind it, never past it.
+    </p>
+    <form id="login-form">
+      <input id="login-name" type="text" placeholder="Your name (e.g. ava_g)"
+             autocomplete="off" maxlength="32" spellcheck="false">
+      <button type="submit" class="primary">Start</button>
+    </form>
+    <p class="tiny muted">Returning? Same name picks up where you left off.</p>
+  </div>
+</section>
+
+<!-- ===================== screen 2: diagnostic ===================== -->
+<section id="screen-diagnostic" hidden>
+  <div class="card q-card">
+    <div class="q-top">
+      <span class="tag" id="diag-node"></span>
+      <span class="muted" id="diag-progress"></span>
+    </div>
+    <p class="prompt" id="diag-prompt"></p>
+    <p class="tiny muted" id="diag-format"></p>
+    <form id="diag-form">
+      <input id="diag-answer" type="text" autocomplete="off" spellcheck="false"
+             placeholder="Your answer">
+      <button type="submit" class="primary">Submit</button>
+      <button type="button" id="diag-skip" class="ghost">Skip</button>
+    </form>
+    <p class="feedback" id="diag-feedback"></p>
+    <p class="tiny muted">Never seen this before? Skip it — finding that edge is
+       exactly what this quiz is for.</p>
+  </div>
+</section>
+
+<!-- ===================== screen 3: graph + practice ===================== -->
+<section id="screen-graph" hidden>
+  <div class="graph-wrap">
+    <div class="graph-pane card">
+      <div id="graph-holder"></div>
+      <div class="legend">
+        <span><i class="dot mastered"></i> mastered</span>
+        <span><i class="dot inferred"></i> mastered (inferred — not tested yet)</span>
+        <span><i class="dot frontier"></i> your frontier</span>
+        <span><i class="dot locked"></i> locked</span>
+      </div>
+    </div>
+
+    <aside class="side-pane">
+      <div class="card" id="summary-card" hidden>
+        <h2>Diagnostic complete</h2>
+        <div id="summary-body"></div>
+      </div>
+
+      <div class="card" id="pick-card">
+        <h2>Practise</h2>
+        <p class="muted">Click a <b class="fr">highlighted</b> node on the graph.
+           Get <b>3 in a row</b> to master it and unlock what it leads to.</p>
+      </div>
+
+      <div class="card" id="practice-card" hidden>
+        <div class="q-top">
+          <span class="tag" id="prac-node"></span>
+          <span class="pips" id="prac-pips" title="3 in a row to master"></span>
+        </div>
+        <p class="prompt" id="prac-prompt"></p>
+        <p class="tiny muted" id="prac-format"></p>
+        <form id="prac-form">
+          <input id="prac-answer" type="text" autocomplete="off" spellcheck="false"
+                 placeholder="Your answer">
+          <button type="submit" class="primary">Submit</button>
+        </form>
+        <p class="feedback" id="prac-feedback"></p>
+        <div id="prac-hint" class="hint" hidden></div>
+        <button id="prac-next" class="ghost" hidden>Next problem</button>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<div id="toast" hidden></div>
+
+<script src="graph.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
