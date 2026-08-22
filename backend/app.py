@@ -1,7 +1,7 @@
 """
 app.py — the web layer over the ntgen engine.
 
-    python3 web/app.py            ->  http://127.0.0.1:5000
+    python3 backend/app.py        ->  http://127.0.0.1:5001
 
 The dividing line: this file (and store/layout beside it) owns HTTP, identity
 and persistence. Everything mathematical — generation, grading, the graph,
@@ -9,9 +9,12 @@ the diagnostic — is ntgen's, called through its public functions.
 
 Two rules this file exists to enforce:
 
-  1. Answers never leave the server. problem_payload() is the ONLY place a
-     Problem is serialized for the client, and web/leaktest.py proves the
-     rule mechanically. Grading happens here, server-side, always.
+  1. Answers for GRADABLE problems never leave the server. problem_payload()
+     is the ONLY place a Problem is serialized for the client, and
+     backend/leaktest.py proves the rule mechanically. Grading happens here,
+     server-side, always. The one deliberate exception is POST /api/reveal:
+     it returns a worked solution, but only after the problem is retired —
+     a revealed problem 410s on every later grade or reveal attempt.
   2. Unparseable input is not an attempt (PROJECT.md 5.3). It is logged,
      answered with "couldn't read that", and the same problem is re-served —
      record_answer is never called for it, so streaks cannot be hurt by typos.
@@ -30,14 +33,15 @@ import uuid
 from pathlib import Path
 
 # ntgen uses flat imports (from graph import ...), so it goes on sys.path
-# rather than becoming a package — its tested files stay untouched. web/ is
-# added too so `gunicorn web.app:app` can find store/layout.
+# rather than becoming a package — its tested files stay untouched. backend/
+# is added too so `gunicorn backend.app:app` can find store/layout.
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE))
-sys.path.insert(0, str(_HERE.parent / "ntgen"))
+sys.path.insert(0, str(_HERE / "ntgen"))
 
 from flask import Flask, jsonify, request  # noqa: E402
 
+import bkt                                                   # noqa: E402
 import graph as g                                            # noqa: E402
 from diagnostic import Diagnostic                            # noqa: E402
 from generator import (                                      # noqa: E402
@@ -45,11 +49,14 @@ from generator import (                                      # noqa: E402
     hand_authored_problem, problem_for_node,
 )
 from verify import safe_eval                                 # noqa: E402
+from steps import steps_for                                  # noqa: E402
+import curriculum as curriculum_mod                          # noqa: E402
 
 import layout                                                # noqa: E402
 import store                                                 # noqa: E402
 
-app = Flask(__name__, static_folder="static", static_url_path="")
+app = Flask(__name__, static_folder=str(_HERE.parent / "frontend"),
+            static_url_path="")
 
 # Loaded once at import; the process refuses to boot on broken data, which
 # beats discovering it when a student hits the first endpoint.
@@ -57,8 +64,17 @@ G = g.load_graph()
 G.validate()
 TEMPLATES = load_templates()
 HAND = load_hand_authored()
+CURRICULUM = curriculum_mod.load_curriculum()
+curriculum_mod.validate(CURRICULUM, G)
 POSITIONS = layout.positions(G)
 RNG = random.Random()
+
+# The knowledge-tracing model's fixed pieces: prerequisite adjacency, per-tier
+# parameters, and the set of nodes problems exist for. Per-student state is
+# just {node: P(mastered)} on disk; a KnowledgeState is rebuilt per request.
+ADJ = {nid: G.prereqs(nid) for nid in G.order}
+PARAMS = bkt.params_for_graph(G)
+AUTHORED = set(G.authored_nodes())
 
 SERVED = {}   # problem_id -> {"student", "purpose", "node", "problem"}
 DIAGS = {}    # student key -> live Diagnostic
@@ -167,22 +183,83 @@ def find_problem(state: dict, key: str, pid: str, purpose: str):
     return None
 
 
+# ---------------------------------------------------------------------------
+# Knowledge state (Phase 2B: BKT is the mastery mechanic; the streak is UI)
+# ---------------------------------------------------------------------------
+
+def ensure_bkt(key: str, state: dict) -> None:
+    """
+    Lazy migration: student files written before Phase 2B have only the
+    binary mastery dict. Map it onto probabilities once — mastered nodes
+    just above the threshold, everything else at its tier prior — then one
+    propagate so ancestors of mastered nodes read coherently. The unlocked
+    seed is whatever the old rule had unlocked; unlocking is sticky, so a
+    migration can only be generous, never a rug-pull. Streaks and attempts
+    survive untouched: the pips resume exactly where the student left them.
+    """
+    if "bkt" in state:
+        return
+    mastery = state["mastery"]
+    p = {nid: (bkt.P_MASTERED + 0.01) if mastery[nid]["mastered"]
+         else PARAMS[nid].p_init
+         for nid in G.order}
+    ks = bkt.KnowledgeState(ADJ, PARAMS, p=p, authored=AUTHORED)
+    ks.propagate()
+    unlocked = [nid for nid in G.authored_nodes()
+                if G.is_unlocked(nid, mastery) or mastery[nid]["mastered"]]
+    state["bkt"] = {"version": 1, "p": ks.export(), "unlocked": unlocked}
+    store.save_student(key, state)
+
+
+def bkt_state(state: dict) -> bkt.KnowledgeState:
+    return bkt.KnowledgeState(ADJ, PARAMS, p=state["bkt"]["p"],
+                              authored=AUTHORED)
+
+
+def progress_str(p: float) -> str:
+    """What the tooltip shows: 'mastered' past the threshold, else percent
+    (floored, so 94.9% never reads as the 95 it hasn't reached)."""
+    if p >= bkt.P_MASTERED:
+        return "mastered"
+    return f"{int(p * 100 + 1e-9)}%"
+
+
+def node_status(nid: str, pmap: dict, unlocked: set) -> str:
+    """Three states for the UI. Unlocking is sticky, colour is honest: a
+    node that crossed 0.95 and later faded reads 'frontier' again —
+    clickable, amber-ish, telling the truth."""
+    if pmap[nid] >= bkt.P_MASTERED:
+        return "mastered"
+    if nid in unlocked:
+        return "frontier"
+    return "locked"
+
+
+def moved_payload(moved: dict) -> dict:
+    """The per-answer delta map the frontend animates. Sub-millipoint
+    drift is noise, not news."""
+    return {nid: round(d, 3) for nid, d in moved.items() if abs(d) >= 0.0005}
+
+
 def state_payload(state: dict) -> dict:
     """Everything the graph view needs, straight off the engine."""
     mastery = state["mastery"]
-    status = G.status(mastery)
+    pmap = state["bkt"]["p"]
+    unlocked = set(state["bkt"]["unlocked"])
     return {
         "nodes": {
             nid: {
-                "status": status[nid],
+                "status": node_status(nid, pmap, unlocked),
                 "source": mastery[nid]["source"],
                 "streak": mastery[nid]["streak"],
                 "attempts": mastery[nid]["attempts"],
-                "progress": g.progress(mastery, nid),
+                "p": round(pmap[nid], 3),
+                "progress": progress_str(pmap[nid]),
             }
             for nid in G.order
         },
-        "frontier": G.frontier(mastery),
+        "frontier": [nid for nid in G.order
+                     if nid in unlocked and pmap[nid] < bkt.P_MASTERED],
     }
 
 
@@ -201,8 +278,13 @@ def live_diag(key: str, state: dict) -> Diagnostic:
 
 
 def finish_diagnostic(key: str, state: dict, d: Diagnostic) -> dict:
-    """Persist result() exactly once, at the moment the search completes."""
-    state["mastery"] = d.result()
+    """Persist result() exactly once, at the moment the search completes.
+    The calibrated probabilities and the unlock seed replace the BKT block;
+    streaks and attempts are NOT touched (they are UI history, not belief)."""
+    res = d.result()
+    state["bkt"] = {"version": 1, "p": res["p"], "unlocked": res["unlocked"]}
+    for nid, src in res["source"].items():
+        state["mastery"][nid]["source"] = src
     state["diagnostic"]["done"] = True
     state["outstanding"] = None
     store.save_student(key, state)
@@ -220,6 +302,7 @@ def load_or_404(key: str):
     state = store.load_student(key)
     if state is None:
         return None, (jsonify({"error": "unknown_student"}), 404)
+    ensure_bkt(key, state)
     return state, None
 
 
@@ -244,6 +327,7 @@ def login():
                 "outstanding": None,
             }
             store.save_student(key, state)
+        ensure_bkt(key, state)
     phase = "practice" if state["diagnostic"]["done"] else "diagnostic"
     return jsonify({"student": key,
                     "display_name": state["display_name"],
@@ -350,7 +434,7 @@ def diagnostic_answer():
             })
 
         correct = grade == "correct"
-        d.record(p.node, correct)
+        moved = d.record(p.node, correct)
         state["diagnostic"]["history"].append([p.node, correct])
         state["outstanding"] = None
         SERVED.pop(pid, None)
@@ -358,6 +442,7 @@ def diagnostic_answer():
         if d.is_done() or d.next_node() is None:
             resp = finish_diagnostic(key, state, d)
             resp["grade"] = grade
+            resp["moved"] = moved_payload(moved)
             return jsonify(resp)
 
         new_pid, new_p = serve_problem(state, key, d.next_node(), "diagnostic")
@@ -366,6 +451,9 @@ def diagnostic_answer():
             "done": False,
             "question_number": d.asked + 1,
             "max_questions": d.max_questions,
+            # what this one answer did to the model — the frontend's
+            # "updated N skills" moment
+            "moved": moved_payload(moved),
             "problem": problem_payload(new_pid, new_p),
         })
 
@@ -380,14 +468,16 @@ def problem_route():
             return err
         if node not in G:
             return jsonify({"error": "unknown_node"}), 404
-        # Mastered nodes stay practicable for review; locked ones never serve.
-        if not G.is_unlocked(node, state["mastery"]):
+        # The sticky unlocked set is the single serving gate: mastered nodes
+        # stay practicable for review (they're in it), tier 2/3 never enter
+        # it, and a faded former-master is still in it. Locked never serves.
+        if node not in state["bkt"]["unlocked"]:
             return jsonify({"error": "node_locked"}), 403
         pid, p = serve_problem(state, key, node, "practice")
         return jsonify({
             "problem": problem_payload(pid, p),
             "streak": state["mastery"][node]["streak"],
-            "progress": g.progress(state["mastery"], node),
+            "progress": progress_str(state["bkt"]["p"][node]),
         })
 
 
@@ -415,18 +505,31 @@ def answer_route():
 
         mastery = state["mastery"]
         if grade == "unparseable":
-            # Streak untouched, problem still live — the student retypes.
+            # Streak untouched, model untouched, problem still live — the
+            # student retypes. A typo is not evidence about anything.
             return jsonify({
                 "grade": grade,
                 "streak": mastery[p.node]["streak"],
-                "progress": g.progress(mastery, p.node),
+                "progress": progress_str(state["bkt"]["p"][p.node]),
                 "just_mastered": False,
                 "newly_unlocked": [],
                 "hint": None,
             })
 
-        before = {k: dict(v) for k, v in mastery.items()}
-        just_mastered = g.record_answer(mastery, p.node, grade == "correct")
+        # Streak/attempts keep their old bookkeeping (they drive the pips and
+        # week-3 telemetry); BELIEF is the model's. record_answer's mastered
+        # flag is vestigial now — its return value is deliberately ignored.
+        g.record_answer(mastery, p.node, grade == "correct")
+
+        ks = bkt_state(state)
+        p_before = ks.p[p.node]
+        moved = ks.observe(p.node, grade == "correct")
+        state["bkt"]["p"] = ks.export()
+        just_mastered = p_before < bkt.P_MASTERED <= ks.p[p.node]
+        additions = bkt.unlock_additions(G.authored_nodes(), G.prereqs,
+                                         ks.p, state["bkt"]["unlocked"])
+        state["bkt"]["unlocked"].extend(additions)
+
         state["outstanding"] = None
         SERVED.pop(pid, None)
         store.save_student(key, state)
@@ -434,13 +537,75 @@ def answer_route():
         return jsonify({
             "grade": grade,
             "streak": mastery[p.node]["streak"],
-            "progress": g.progress(mastery, p.node),
+            "progress": progress_str(ks.p[p.node]),
             "just_mastered": just_mastered,
-            "newly_unlocked": G.newly_unlocked(before, mastery),
+            "newly_unlocked": additions,
+            "moved": moved_payload(moved),
             # The hint, never the answer — the next problem is fresh anyway.
             "hint": (p.hint or None) if grade == "wrong" else None,
             "status": state_payload(state),
         })
+
+
+@app.post("/api/reveal")
+def reveal_route():
+    """Give up on the current practice problem: streak resets, the problem
+    is retired, and only then does a worked solution leave the server.
+
+    A surrender is NOT an attempt (PROJECT.md 5.3) — reset_streak touches
+    nothing but the streak, and the event logs as grade "revealed" so week-3
+    analysis can count surrenders separately. Practice only: a diagnostic
+    problem_id mismatches on purpose inside find_problem and 410s.
+    """
+    body = request.get_json(silent=True) or {}
+    key = store.slugify(body.get("student", ""))
+    pid = str(body.get("problem_id", ""))
+
+    with store.LOCK:
+        state, err = load_or_404(key)
+        if err:
+            return err
+        p = find_problem(state, key, pid, "practice")
+        if p is None:
+            return jsonify({"error": "problem_expired"}), 410
+
+        store.log_event({
+            "student": key, "purpose": "practice", "node": p.node,
+            "template_id": p.template_id, "params": p.params,
+            "raw": None, "grade": "revealed", "skipped": False,
+        })
+
+        # The cost, then the retirement — persisted BEFORE the solution
+        # exists in any response. Both resurrection paths (SERVED and the
+        # persisted outstanding) die here, so a revealed problem can never
+        # be graded: the 410 survives even a server restart.
+        #
+        # A surrender is also EVIDENCE: the wrong-answer posterior with no
+        # learning credit (mastery is earned by answering, not by reading),
+        # propagated like any observation. Still not an attempt.
+        mastery = state["mastery"]
+        g.reset_streak(mastery, p.node)
+        ks = bkt_state(state)
+        moved = ks.observe_reveal(p.node)
+        state["bkt"]["p"] = ks.export()
+        state["outstanding"] = None
+        SERVED.pop(pid, None)
+        store.save_student(key, state)
+
+        return jsonify({
+            "steps": steps_for(p),
+            "streak": mastery[p.node]["streak"],
+            "progress": progress_str(ks.p[p.node]),
+            "moved": moved_payload(moved),
+            "status": state_payload(state),
+        })
+
+
+@app.get("/api/curriculum")
+def curriculum_route():
+    # Static teaching content, open to read — lessons carry no student data
+    # and no problem answers (worked examples are fixed pedagogy, not keys).
+    return jsonify(CURRICULUM)
 
 
 @app.get("/api/health")
@@ -453,8 +618,20 @@ def index():
     return app.send_static_file("index.html")
 
 
+@app.get("/learn")
+def learn_page():
+    return app.send_static_file("learn.html")
+
+
+@app.get("/practice")
+def practice_page():
+    return app.send_static_file("practice.html")
+
+
 if __name__ == "__main__":
     # threaded is fine (store.LOCK serializes mutation); a second PROCESS is
     # not — see the module docstring. debug stays off: the werkzeug debugger
     # is remote code execution, and the reloader would wipe SERVED/DIAGS.
-    app.run(host="127.0.0.1", port=5000, debug=False, threaded=True)
+    # Port 5001, not 5000: macOS AirPlay Receiver squats on 5000 and answers
+    # 403 whenever this app is down, which reads as an authorization bug.
+    app.run(host="127.0.0.1", port=5001, debug=False, threaded=True)

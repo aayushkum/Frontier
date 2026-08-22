@@ -133,7 +133,7 @@ def generate(template: dict, rng=None, max_attempts=MAX_SAMPLE_ATTEMPTS) -> Prob
 
 def load_templates(path=None):
     # Default resolves next to this file, not the CWD, so scripts work from
-    # anywhere (repo root, ntgen/, a future server process).
+    # anywhere (repo root, backend/ntgen/, the server process).
     path = Path(path) if path else Path(__file__).parent / "templates.json"
     data = json.loads(path.read_text())
     return {t["id"]: t for t in data["templates"]}

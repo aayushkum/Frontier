@@ -12,6 +12,11 @@ Checks per template:
   5. Garbage input is graded wrong without raising.
   6. Unreadable input grades "unparseable" — a formatting slip must never
      count as an attempt (PROJECT.md 5.3).
+  7. The reveal's worked solution (steps.py) is a non-empty list of clean
+     step strings whose final line states the answer — and that stated
+     answer, typed verbatim, grades correct. This cross-checks the stored
+     solution against an independent derivation, so it also catches
+     templates whose solution expression is simply wrong.
 
 Templates may carry a "selftest" block — and condition-checked templates
 MUST, because they have no stored answer the gate could use:
@@ -33,8 +38,11 @@ from generator import (
     load_templates, generate, load_hand_authored, hand_authored_problem,
 )
 from verify import TemplateError, safe_eval, is_sentinel
-from graph import load_graph, GraphError, is_mastered
+from graph import load_graph, GraphError
 from diagnostic import Diagnostic, SimulatedStudent, MAX_QUESTIONS
+from steps import steps_for, answer_display, RENDERERS
+from curriculum import load_curriculum, validate as validate_curriculum, CurriculumError
+import bkt
 
 TRIALS = 300
 
@@ -107,6 +115,25 @@ def check_no_solution_case(p):
     for bogus in ["0", "1", "7"]:
         if p.check(bogus):
             out.append(f"number accepted though no answer exists: {p.prompt} -> {bogus}")
+    return out
+
+
+def check_steps(p):
+    """Check #7: the reveal's worked solution honours its contract."""
+    lines = steps_for(p)
+    if not (isinstance(lines, list) and lines
+            and all(isinstance(s, str) and s.strip() for s in lines)):
+        return [f"steps: not a non-empty list of strings: {p.prompt}"]
+    out = []
+    for s in lines:
+        if "{" in s or "}" in s:
+            out.append(f"steps: unfilled placeholder: {s[:70]!r}")
+            break
+    disp = answer_display(p)
+    if disp not in lines[-1]:
+        out.append(f"steps: final line missing the answer {disp!r}: {lines[-1][:70]!r}")
+    if p.grade(disp) != "correct":
+        out.append(f"steps: displayed answer does not grade correct: {disp!r}")
     return out
 
 
@@ -217,6 +244,7 @@ def test_template(tpl, rng):
                 failures.append(f"garbage raised instead of returning False: {e}")
 
         failures += check_tristate(p, checker)
+        failures += check_steps(p)
 
         if failures:
             break
@@ -287,6 +315,7 @@ def test_hand_authored(entry):
             failures.append(f"garbage raised instead of returning False: {e}")
 
     failures += check_tristate(p, entry.get("checker", "exact"))
+    failures += check_steps(p)
 
     return failures
 
@@ -310,11 +339,29 @@ def check_graph(templates, hand):
     return True
 
 
+def check_curriculum():
+    """curriculum.md must parse and agree with the DAG: every authored node
+    has a lesson, and each lesson's id, tier, and prereq edges match the
+    graph exactly (the doc is the source of truth for edges — a mismatch
+    means one of them drifted)."""
+    try:
+        c = load_curriculum()
+        validate_curriculum(c, load_graph())
+    except CurriculumError as e:
+        print(f"FAIL  curriculum  ({e})")
+        return False
+    n = len(c["lessons"])
+    print(f"ok    curriculum  {n} lessons parsed, ids/tiers/prereqs match the DAG")
+    return True
+
+
 def check_diagnostic():
     """
-    The diagnostic must stay inside its question budget and must never hand a
-    student a frontier node whose prerequisites are not mastered — that would
-    serve someone a problem they have no route to.
+    The diagnostic must stay inside its question budget, must never hand a
+    student a frontier node whose prerequisites are below the mastery
+    threshold — that would serve someone a problem they have no route to —
+    and must be a pure function of its history, because the app recovers a
+    live diagnostic after a restart by replaying that history.
     """
     G = load_graph()
     failures = []
@@ -328,22 +375,32 @@ def check_diagnostic():
     for label, knows, expect_frontier in profiles:
         student = SimulatedStudent(G, knows)
         d = Diagnostic(G)
-        mastery = d.run(student.answer)
+        res = d.run(student.answer)
+        p, unlocked = res["p"], set(res["unlocked"])
 
         if d.asked > MAX_QUESTIONS:
             failures.append(f"{label}: asked {d.asked} questions, budget is {MAX_QUESTIONS}")
         if d.known & d.unknown:
             failures.append(f"{label}: nodes both known and unknown: {d.known & d.unknown}")
 
-        frontier = G.frontier(mastery)
+        frontier = [n for n in G.order
+                    if n in unlocked and p[n] < bkt.P_MASTERED]
         for n in frontier:
             if not G.is_authored(n):
                 failures.append(f"{label}: frontier contains unauthored node {n}")
-            missing = [p for p in G.prereqs(n) if not is_mastered(mastery, p)]
-            if missing:
-                failures.append(f"{label}: frontier node {n} needs unmastered {missing}")
+            weak = [q for q in G.prereqs(n) if p[q] < bkt.P_MASTERED]
+            if weak:
+                failures.append(f"{label}: frontier node {n} needs weak {weak}")
         if expect_frontier is not None and frontier != expect_frontier:
             failures.append(f"{label}: frontier {frontier} != expected {expect_frontier}")
+
+        # Replay IS recovery: a fresh Diagnostic fed the same history must
+        # land on the identical result, float for float.
+        d2 = Diagnostic(G)
+        for node, ok in d.history:
+            d2.record(node, ok)
+        if d2.result() != res:
+            failures.append(f"{label}: replaying history gives a different result")
 
     if failures:
         print("FAIL  diagnostic")
@@ -351,7 +408,126 @@ def check_diagnostic():
             print(f"        {f}")
         return False
     print(f"ok    diagnostic  {len(profiles)} student profiles, "
-          f"<={MAX_QUESTIONS} questions each")
+          f"<={MAX_QUESTIONS} questions each, replay-deterministic")
+    return True
+
+
+def check_bkt():
+    """
+    The knowledge-tracing model is the mastery mechanic now, so its math is
+    gated like a template: pacing (3 corrects always master, 2 from cold
+    never do — the promise students were given), the identifiability guard,
+    the transition-on-correct-only decision, propagation monotonicity, and
+    that the diagnostic's probe pool can only pick nodes we can actually
+    serve. Everything here is deterministic and fast — no fitting.
+    """
+    failures = []
+    G = load_graph()
+    PARAMS = bkt.params_for_graph(G)
+    ADJ = {nid: G.prereqs(nid) for nid in G.order}
+    AUTHORED = set(G.authored_nodes())
+
+    def fresh():
+        return bkt.KnowledgeState(ADJ, PARAMS, authored=AUTHORED)
+
+    # 1. spot values for the core update (defaults .15/.30/.10/.20)
+    prm = bkt.NodeParams()
+    if abs(bkt.update(0.15, True, prm) - 0.6098) > 1e-3:
+        failures.append(f"correct-update(0.15) = {bkt.update(0.15, True, prm):.4f}, expected 0.6098")
+    if abs(bkt.update(0.15, False, prm) - 0.0216) > 1e-3:
+        failures.append(f"wrong-update(0.15) = {bkt.update(0.15, False, prm):.4f}, expected 0.0216")
+
+    # 2. identifiability guard: slip + guess must stay < 1 after clamp
+    bad = bkt.NodeParams(p_slip=0.9, p_guess=0.9).clamp()
+    if bad.p_slip + bad.p_guess >= 1:
+        failures.append(f"clamp left slip+guess = {bad.p_slip + bad.p_guess} >= 1")
+
+    # 3. a wrong answer strictly lowers P, everywhere on the grid (the §6
+    #    decision: no learning credit for a miss)
+    for p100 in range(1, 100):
+        p = p100 / 100
+        if bkt.update(p, False, prm) >= p:
+            failures.append(f"wrong answer raised P from {p}")
+            break
+
+    # 4. reveal is exactly the wrong-answer observation
+    a, b = fresh(), fresh()
+    if a.observe_reveal("crt") != b.observe("crt", False) or a.p != b.p:
+        failures.append("observe_reveal differs from a wrong observation")
+
+    # 5. propagation is monotone: a correct never lowers any node, a wrong
+    #    never raises any — and a cyclic graph is refused
+    ks = fresh()
+    before = dict(ks.p)
+    ks.observe("crt", True)
+    dropped = [n for n in ks.p if ks.p[n] < before[n] - 1e-12]
+    if dropped:
+        failures.append(f"correct at crt lowered {dropped[:3]}")
+    before = dict(ks.p)
+    ks.observe("euclidean", False)
+    raised = [n for n in ks.p if ks.p[n] > before[n] + 1e-12]
+    if raised:
+        failures.append(f"wrong at euclidean raised {raised[:3]}")
+    try:
+        bkt.KnowledgeState({"a": ["b"], "b": ["a"]},
+                           {"a": bkt.NodeParams(), "b": bkt.NodeParams()})
+        failures.append("2-cycle graph was accepted")
+    except ValueError:
+        pass
+
+    # 6. pacing, per tier profile: 3 consecutive corrects master from ANY
+    #    prior (checked at the worst case, ~0), 2 from the cold prior do not
+    for tier, tp in sorted(bkt.TIER_PARAMS.items()):
+        p = 1e-6
+        for _ in range(3):
+            p = bkt.update(p, True, tp)
+        if p < bkt.P_MASTERED:
+            failures.append(f"tier {tier}: 3 corrects from ~0 reach only {p:.4f}")
+        p = tp.p_init
+        p = bkt.update(bkt.update(p, True, tp), True, tp)
+        if p >= bkt.P_MASTERED:
+            failures.append(f"tier {tier}: 2 corrects from cold already master ({p:.4f})")
+
+    # 7. the diagnostic probe pool only ever picks servable nodes
+    ks = fresh()
+    picked = []
+    for _ in range(8):
+        n = ks.most_informative(exclude=picked)
+        if n is None:
+            break
+        if n not in AUTHORED:
+            failures.append(f"most_informative picked unauthored {n}")
+            break
+        picked.append(n)
+        ks.observe(n, True)
+
+    # 8. persisted state round-trips exactly, including its next update
+    ks = fresh()
+    ks.observe("gcd_lcm", True)
+    ks.observe("order", False)
+    twin = bkt.KnowledgeState(ADJ, PARAMS, p=ks.export(), authored=AUTHORED)
+    if twin.export() != ks.export():
+        failures.append("export/reconstruct changed probabilities")
+    elif ks.observe("mod_arith", True) != twin.observe("mod_arith", True):
+        failures.append("round-tripped state diverges on the next observation")
+
+    # 9. no-deadlock sweep: every authored node, practiced directly from a
+    #    cold state, masters in 3 corrects. This pins the backward-before-
+    #    forward pass order — swapping them caps practiced nodes at ~0.35.
+    for n in G.authored_nodes():
+        ks = fresh()
+        for _ in range(3):
+            ks.observe(n, True)
+        if ks.p[n] < bkt.P_MASTERED:
+            failures.append(f"{n}: 3 direct corrects reach only {ks.p[n]:.4f}")
+
+    if failures:
+        print("FAIL  bkt")
+        for f in failures[:3]:
+            print(f"        {f}")
+        return False
+    print(f"ok    bkt  update math, clamp, pacing bound, monotone propagation, "
+          f"{len(G.authored_nodes())}-node no-deadlock sweep")
     return True
 
 
@@ -360,7 +536,19 @@ def main():
     templates = load_templates()
     hand = load_hand_authored()
     all_ok = check_graph(templates, hand)
+    all_ok = check_curriculum() and all_ok
+    all_ok = check_bkt() and all_ok
     all_ok = check_diagnostic() and all_ok
+
+    # Every generated template must have a steps renderer BEFORE it can be
+    # served — a reveal with no worked solution would silently degrade to a
+    # bare answer line.
+    unrendered = sorted(set(templates) - set(RENDERERS))
+    if unrendered:
+        all_ok = False
+        print(f"FAIL  steps coverage  (no renderer for: {', '.join(unrendered)})")
+    else:
+        print(f"ok    steps coverage  every template has a worked-solution renderer")
 
     for tid, tpl in templates.items():
         failures = test_template(tpl, rng)

@@ -1,5 +1,5 @@
 """
-graph_demo.py — CHECKPOINT 2. Run: python3 ntgen/graph_demo.py
+graph_demo.py — CHECKPOINT 2. Run: python3 backend/ntgen/graph_demo.py
 
 Loads the DAG, validates it, then simulates a student mastering their way
 along the demo path and prints how the three states move at each step.

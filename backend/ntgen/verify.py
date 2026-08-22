@@ -99,7 +99,17 @@ def crt_value(moduli, residues):
     instead of hiding it.
     """
     result = sympy_crt([int(m) for m in moduli], [int(r) for r in residues])
-    return SENTINEL if result is None else int(result[0])
+    if result is None:
+        return SENTINEL
+    # sympy can hand back a non-reduced representative when moduli share a
+    # factor: crt([12, 8], [8, 0]) -> (32, 96) — its combined modulus is the
+    # product, not the lcm, so 32 is a solution but not the smallest. The
+    # solution set is one class mod lcm, and every crt prompt asks for the
+    # smallest non-negative member of it.
+    modulus = 1
+    for m in moduli:
+        modulus = int(lcm(modulus, int(m)))
+    return int(result[0]) % modulus
 
 
 # ---------------------------------------------------------------------------

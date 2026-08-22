@@ -1,8 +1,14 @@
 """
-session_demo.py — CHECKPOINT 3.
+session_demo.py — CHECKPOINT 3.  ** PRE-BKT, DOES NOT RUN ANY MORE **
 
-    python3 ntgen/session_demo.py                 simulated students
-    python3 ntgen/session_demo.py --interactive   take the diagnostic yourself
+Phase 2B (2026-08-22) changed Diagnostic.result() from a binary mastery dict
+to {"p", "unlocked", "source"} — see BKT_SPEC.md. This walkthrough narrates
+the OLD binary flow and is kept only as checkpoint-3 history; the live flow
+it demonstrated is now exercised by backend/leaktest.py end to end, and the
+model itself by `python3 backend/ntgen/fit_bkt.py`.
+
+    python3 backend/ntgen/session_demo.py                 simulated students
+    python3 backend/ntgen/session_demo.py --interactive   take the diagnostic yourself
 
 Part 1 runs the diagnostic against students whose real knowledge level is
 known in advance, so the frontier it finds can be checked rather than admired.

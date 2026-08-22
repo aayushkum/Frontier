@@ -3,41 +3,54 @@ diagnostic.py — find where a student's knowledge stops, in about six questions
 
 The idea. A linear quiz that walks the curriculum from the start wastes every
 question on a strong student and never reaches the interesting part. Instead we
-binary search the prerequisite graph:
+search the prerequisite graph, and since Phase 2B every answer also feeds a
+live Bayesian Knowledge Tracing model (bkt.py) — the same one that drives
+mastery afterwards — so each question visibly moves several nodes at once.
 
-    a CORRECT answer rules out everything BELOW the node   (its prerequisites)
-    a WRONG   answer rules out everything ABOVE the node   (what depends on it)
+Two mechanisms run side by side, on purpose:
 
-so each question removes a chunk of the graph rather than one node. Six
-questions is enough to bracket the frontier in a 22-node graph, where a linear
-quiz would need 22.
+  THE SETS (proven, from the original bisection). A correct answer implies the
+  node's PREREQUISITES; a wrong one rules out its DEPENDENTS:
 
-Where to start. `congruence` (PROJECT.md 5.1) sits on the boundary between
-school math and contest math — exactly the gap this project claims to close.
-Starting at the root wastes questions on strong students; starting deep
-confuses weak ones.
+      pass  ->  ANCESTORS   inferred mastered
+      fail  ->  DESCENDANTS inferred locked
 
-Inference, and why the direction matters. Passing a node means its
-prerequisites are safe to assume: you cannot do modular exponentiation without
-modular arithmetic. Failing a node means everything downstream is out of
-reach. But passing a node says NOTHING about the harder material above it —
-that is still unknown. So:
+  (The build spec states this the other way round — see plan.md. Inferring
+  that a pass implies mastery of everything downstream would hand a student a
+  frontier far past what they can actually do.) The sets also prune the
+  question pool: without them a weak student would be served the six deepest
+  nodes, because a wrong answer never lifts anything.
 
-    pass  ->  ANCESTORS   inferred mastered
-    fail  ->  DESCENDANTS inferred locked
+  THE MODEL (BKT). Each answer is a real observation: Bayes posterior, then
+  propagation along the edges. This produces the per-node probabilities and
+  the {node: delta} map the frontend animates ("1 answer -> 9 skills updated").
 
-(The build spec states this the other way round. It is written up in plan.md;
-inferring that a pass implies mastery of everything downstream would hand a
-student a frontier far past what they can actually do.)
+Question selection: question 1 is anchored at `congruence` (PROJECT.md 5.1 —
+the boundary between school math and contest math). After that,
+KnowledgeState.most_informative() picks the authored node with the highest
+p(1-p) * sqrt(1 + ancestors) — most uncertain, weighted toward probes whose
+answer moves the most of the graph — excluding nodes the sets have already
+classified.
 
-Every conclusion is tagged `tested` or `inferred` in the mastery state.
-Inference is a guess and the UI must never present it as a measurement.
+Why result() must CALIBRATE (as-built delta 5 in BKT_SPEC.md): the backward
+pass lifts prerequisites to at most 0.85 * P <= 0.85, which is below the 0.95
+mastery threshold — so with one observation per node, nothing could ever
+unlock and every student would finish at the root. The sets are the proven
+verdict, so they set the final priors: tested-correct nodes are floored at
+0.96, inferred-known at 0.95 (the dashed "prove it" look — one wrong answer
+honestly drops them), tested-wrong keep their observed low posterior, and
+inferred-unknown are capped at 0.40. No propagation runs after calibration:
+it would let a capped dependent lift a tested-wrong node back up. Tested
+beats inferred, exactly as before.
 
-The class below is deliberately shaped like the web API it will sit behind in
-phase 4: construct, ask for the next node, record one answer, repeat.
+Every conclusion is tagged `tested` or `inferred`. Inference is a guess and
+the UI must never present it as a measurement.
+
+A Diagnostic is a pure function of its answer history (deterministic
+tie-breaks everywhere), so replaying the history IS recovery after a restart.
 """
 
-from graph import new_mastery, set_mastered
+import bkt
 
 
 # Where the search starts (PROJECT.md 5.1).
@@ -46,12 +59,22 @@ START_NODE = "congruence"
 # Question budget. "Do not ask 40 questions. Ask ~6."
 MAX_QUESTIONS = 6
 
+# Calibration levels. Tested mastery sits above the inferred floor so a
+# measured node survives one slip a touch better than a guessed one.
+P_TESTED = 0.96
+P_INFERRED = bkt.P_MASTERED          # 0.95 — exactly at the threshold
+P_UNKNOWN_CAP = 0.40                 # inferred-locked nodes end at most here
+
 
 class Diagnostic:
     def __init__(self, graph, start=START_NODE, max_questions=MAX_QUESTIONS):
         self.graph = graph
         self.start = start
         self.max_questions = max_questions
+
+        adj = {nid: graph.prereqs(nid) for nid in graph.order}
+        self.ks = bkt.KnowledgeState(adj, bkt.params_for_graph(graph),
+                                     authored=set(graph.authored_nodes()))
 
         self.known = set()      # believed mastered
         self.unknown = set()    # believed not mastered
@@ -80,24 +103,18 @@ class Diagnostic:
             return None
         if self.asked == 0 and self.start in pool:
             return self.start
-
-        # Bisect: the best question is the one whose two possible outcomes
-        # eliminate similar amounts of the remaining space. A node that would
-        # tell us a lot when correct but nothing when wrong is a bad question.
-        pool_set = set(pool)
-        best, best_score = None, -1
-        for cand in pool:  # file order, so ties break deterministically
-            if_correct = 1 + len(self.graph.ancestors(cand) & pool_set)
-            if_wrong = 1 + len(self.graph.descendants(cand) & pool_set)
-            score = min(if_correct, if_wrong)
-            if score > best_score:
-                best, best_score = cand, score
-        return best
+        # Highest-information probe among the unclassified authored nodes.
+        return self.ks.most_informative(exclude=self.known | self.unknown)
 
     def record(self, node, correct):
-        """Fold one answer into what we believe."""
+        """
+        Fold one answer into both mechanisms. Returns the BKT moved-map
+        {node_id: delta} so the caller can show what one answer did.
+        """
         self.history.append((node, correct))
         self.tested[node] = bool(correct)
+
+        moved = self.ks.observe(node, bool(correct))
 
         if correct:
             implied = {node} | self.graph.ancestors(node)
@@ -114,6 +131,8 @@ class Diagnostic:
                 continue
             gain.add(n)
             lose.discard(n)
+
+        return moved
 
     def is_done(self):
         return self.asked >= self.max_questions or not self._pool()
@@ -134,24 +153,34 @@ class Diagnostic:
 
     def result(self):
         """
-        The starting mastery state, with every conclusion tagged.
+        The student's starting knowledge state:
 
-        source == "tested"   we asked, this is measured
-        source == "inferred" we deduced it from the graph
-        source is None       never determined; treated as not mastered
+            {"p":        {node_id: P(mastered)},   # calibrated, see module doc
+             "unlocked": [node_id, ...],           # the sticky unlock seed
+             "source":   {node_id: "tested"|"inferred"}}
         """
-        mastery = new_mastery(self.graph)
+        p = self.ks.export()
+        source = {}
         for n in self.known:
-            source = "tested" if self.tested.get(n) is True else "inferred"
-            set_mastered(mastery, n, True, source)
+            tested = self.tested.get(n) is True
+            p[n] = max(p[n], P_TESTED if tested else P_INFERRED)
+            source[n] = "tested" if tested else "inferred"
         for n in self.unknown:
-            source = "tested" if self.tested.get(n) is False else "inferred"
-            set_mastered(mastery, n, False, source)
-        return mastery
+            if self.tested.get(n) is False:
+                source[n] = "tested"      # keep the observed low posterior
+            else:
+                p[n] = min(p[n], P_UNKNOWN_CAP)
+                source[n] = "inferred"
+        # NO propagate here — calibration is final (module docstring).
+
+        unlocked = bkt.unlock_additions(
+            self.graph.authored_nodes(), self.graph.prereqs, p, set())
+        return {"p": p, "unlocked": unlocked, "source": source}
 
     def summary(self):
         """Counts for a results screen."""
-        mastery = self.result()
+        res = self.result()
+        p, unlocked = res["p"], set(res["unlocked"])
         tested_pass = [n for n, ok in self.tested.items() if ok]
         tested_fail = [n for n, ok in self.tested.items() if not ok]
         return {
@@ -163,7 +192,8 @@ class Diagnostic:
                 n for n in self.unknown - set(self.tested)
                 if self.graph.is_authored(n)
             ),
-            "frontier": self.graph.frontier(mastery),
+            "frontier": [n for n in self.graph.order
+                         if n in unlocked and p[n] < bkt.P_MASTERED],
         }
 
 

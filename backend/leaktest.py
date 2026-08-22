@@ -1,11 +1,11 @@
 """
 leaktest.py — proves no answer ever leaves the server.
 
-    python3 web/leaktest.py        (exit 0 = pass)
+    python3 backend/leaktest.py    (exit 0 = pass)
 
-Runs beside ntgen/selftest.py as the second half of the standing gate:
+Runs beside backend/ntgen/selftest.py as the second half of the standing gate:
 
-    python3 ntgen/selftest.py && python3 web/leaktest.py
+    python3 backend/ntgen/selftest.py && python3 backend/leaktest.py
 
 It drives full sessions through the API in-process (Flask test_client, no
 network, no server) and holds every response to four checks:
@@ -22,18 +22,25 @@ It also asserts the behavioural rules the UI will rely on: unparseable input
 advances nothing (PROJECT.md 5.3), skip consumes a diagnostic question, a
 server restart mid-problem grades identically after the rebuild, and the
 input guard in app.py rejects no legitimate answer in the whole corpus.
+
+One deliberate exception to "no answer ever": POST /api/reveal (give up)
+returns a worked solution — but only for a problem the server has already
+retired. reveal_check() proves the retirement is total: the revealed
+problem 410s on every later grade or reveal, even across a restart, and a
+surrender never counts as an attempt.
 """
 
 import json
 import os
 import random
+import re
 import sys
 import tempfile
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE))
-sys.path.insert(0, str(_HERE.parent / "ntgen"))
+sys.path.insert(0, str(_HERE / "ntgen"))
 
 # Point the store at a throwaway directory BEFORE the app is imported, so
 # nothing here can ever touch real student files.
@@ -60,6 +67,15 @@ ALLOWED_KEYS = {
     "frontier", "id", "name", "tier", "authored", "x", "y",
     # grading
     "grade", "just_mastered", "newly_unlocked", "hint",
+    # knowledge tracing: per-node P(mastered) and the per-answer delta map
+    "p", "moved",
+    # the reveal's worked solution — the one answer-bearing field, and only
+    # ever for an already-retired problem (see reveal_check)
+    "steps",
+    # curriculum payload (static teaching content, /api/curriculum)
+    "tiers", "lessons", "blurb", "number", "prereqs", "concept",
+    "key_results", "worked_example", "common_mistakes", "problem_types",
+    "note", "beyond",
 } | NODE_IDS
 
 FORBIDDEN_KEYS = {
@@ -79,6 +95,16 @@ SCRUB = {
     "max_questions", "x", "y", "tier", "questions", "progress", "problem_id",
     # identity echo — the client sent this value itself, it can't leak
     "student",
+    # the reveal's steps deliberately state the answer of a RETIRED problem;
+    # selftest's check #7 is the compensating control on their content
+    "steps",
+    # curriculum prose legitimately contains numbers (worked examples,
+    # formulas) — fixed pedagogy, not answer keys
+    "blurb", "concept", "key_results", "worked_example", "common_mistakes",
+    "problem_types", "note", "beyond", "number",
+    # knowledge-tracing floats: "0.87" stringifies containing "87" — a pure
+    # model probability would false-positive against a served answer of 87
+    "p", "moved",
 }
 
 
@@ -271,7 +297,7 @@ class Session:
                                       "answer": correct_answer(p)})
         assert r["grade"] == "correct" and r["streak"] == 1, r
 
-        last = r
+        last, corrects = r, 1
         while not last["just_mastered"]:
             body = self.get(f"/api/problem?student={self.key}&node={node}")
             pid, p = self.served(body)
@@ -279,7 +305,17 @@ class Session:
                              {"student": self.key, "problem_id": pid,
                               "answer": correct_answer(p)})
             assert last["grade"] == "correct", last
+            corrects += 1
+            # The pacing theorem (bkt.py / selftest check_bkt): from ANY
+            # prior, 3 consecutive corrects cross 0.95. If this trips, the
+            # parameters or the propagation pass order broke.
+            assert corrects <= 4, "mastery took >4 consecutive corrects"
+        # In THIS deterministic flow (one wrong, then corrects from a
+        # post-diagnostic low prior) mastery lands exactly on the 3rd
+        # correct, so the familiar streak reading still holds.
         assert last["streak"] == 3, last
+        assert last["status"]["nodes"][node]["p"] >= 0.95, last["status"]["nodes"][node]
+        assert node in last["moved"], "the practiced node itself didn't move"
         return last
 
     def restart_check(self, node):
@@ -293,6 +329,61 @@ class Session:
         r = self.post("/api/answer", {"student": self.key, "problem_id": pid,
                                       "answer": answer})
         assert r["grade"] == "correct", f"restart rebuild failed to grade: {r}"
+
+    def reveal_check(self, node):
+        """The give-up flow: a reveal costs the streak (and ONLY the streak),
+        retires the problem permanently — restart included — and is the one
+        response allowed to carry an answer."""
+        # build a visible streak so the reset is observable
+        body = self.get(f"/api/problem?student={self.key}&node={node}")
+        pid, p = self.served(body)
+        r = self.post("/api/answer", {"student": self.key, "problem_id": pid,
+                                      "answer": correct_answer(p)})
+        assert r["grade"] == "correct" and r["streak"] >= 1, r
+
+        before = self.get(f"/api/state?student={self.key}")
+        attempts_before = before["nodes"][node]["attempts"]
+
+        body = self.get(f"/api/problem?student={self.key}&node={node}")
+        pid, p = self.served(body)
+        r = self.post("/api/reveal", {"student": self.key, "problem_id": pid})
+        assert set(r) == {"steps", "streak", "progress", "moved", "status"}, sorted(r)
+        assert isinstance(r["steps"], list) and r["steps"], r["steps"]
+        assert all(isinstance(s, str) and s for s in r["steps"]), r["steps"]
+        assert not any("{" in s for s in r["steps"]), "placeholder in steps"
+        assert r["streak"] == 0, r
+        assert re.fullmatch(r"\d{1,3}%|mastered", r["progress"]), r["progress"]
+        # a surrender is evidence: the node's P(mastered) must drop
+        assert r["moved"].get(node, 0) < 0, "reveal applied no evidence"
+        assert r["status"]["nodes"][node]["p"] < before["nodes"][node]["p"], \
+            "reveal did not lower P(mastered)"
+        assert r["status"]["nodes"][node]["attempts"] == attempts_before, \
+            "a surrender must not count as an attempt"
+
+        # the revealed problem is dead: no grade, no second reveal
+        self.post("/api/answer", {"student": self.key, "problem_id": pid,
+                                  "answer": correct_answer(p)}, expect=410)
+        self.post("/api/reveal", {"student": self.key, "problem_id": pid},
+                  expect=410)
+
+        # retirement survives a restart: reveal, wipe memory, still 410
+        body = self.get(f"/api/problem?student={self.key}&node={node}")
+        pid, p = self.served(body)
+        self.post("/api/reveal", {"student": self.key, "problem_id": pid})
+        webapp.SERVED.clear()
+        webapp.DIAGS.clear()
+        self.post("/api/answer", {"student": self.key, "problem_id": pid,
+                                  "answer": "1"}, expect=410)
+        self.post("/api/reveal", {"student": self.key, "problem_id": pid},
+                  expect=410)
+
+        # positive twin: a restart BEFORE the reveal must not block it —
+        # find_problem's rebuild path has to feed steps_for
+        body = self.get(f"/api/problem?student={self.key}&node={node}")
+        pid, p = self.served(body)
+        webapp.SERVED.clear()
+        r = self.post("/api/reveal", {"student": self.key, "problem_id": pid})
+        assert r["steps"], "reveal after restart produced no steps"
 
 
 # ---------------------------------------------------------------------------
@@ -334,6 +425,10 @@ def error_paths(s):
     s.get(f"/api/problem?student={s.key}&node=nope", expect=404)
     s.post("/api/answer", {"student": s.key, "problem_id": "deadbeefcafe",
                            "answer": "1"}, expect=410)
+    s.post("/api/reveal", {"student": s.key, "problem_id": "deadbeefcafe"},
+           expect=410)
+    s.post("/api/reveal", {"student": "ghost_student", "problem_id": "x"},
+           expect=404)
     s.post("/api/login", {"name": "   "}, expect=400)
 
 
@@ -360,7 +455,28 @@ def main():
     assert last["just_mastered"], last
     assert set(last["newly_unlocked"]) >= {"primes", "bases"}, last["newly_unlocked"]
     s.restart_check("primes")
+    s.reveal_check("primes")
     error_paths(s)
+
+    # Curriculum: audited like everything else, and complete — every authored
+    # node teaches, and every lesson carries all five sections.
+    cur = s.get("/api/curriculum")
+    authored = {nid for nid in webapp.G.order if webapp.G.is_authored(nid)}
+    assert set(cur["lessons"]) == authored, \
+        f"lessons != authored nodes: {sorted(set(cur['lessons']) ^ authored)}"
+    for lid, lesson in cur["lessons"].items():
+        for field in ("concept", "key_results", "worked_example",
+                      "common_mistakes", "problem_types"):
+            assert isinstance(lesson.get(field), str) and lesson[field], \
+                f"lesson {lid}: empty {field}"
+
+    # Reveal must be impossible during the diagnostic: a diagnostic
+    # problem_id mismatches on purpose inside find_problem and 410s.
+    s_d = Session("Leak Test Reveal", checker)
+    body_d = s_d.post("/api/diagnostic/start", {"student": s_d.key})
+    pid_d, _ = s_d.served(body_d)
+    s_d.post("/api/reveal", {"student": s_d.key, "problem_id": pid_d},
+             expect=410)
 
     # Session 2 — deterministic: aces everything, then skips are exercised
     # in session 3. Strong student's frontier must sit past the diagnostic.

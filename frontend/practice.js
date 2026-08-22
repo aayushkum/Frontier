@@ -1,78 +1,21 @@
-/* app.js — screen flow: login -> diagnostic -> graph + practice.
+/* practice.js — the practice page: login -> diagnostic -> graph + practice.
 
-   Everything is graded on the server; this file never sees an answer key.
-   The one grading rule it must respect (PROJECT.md 5.3): a response of
-   "unparseable" is NOT an attempt — keep the student's text so they can fix
-   the typo, and change nothing else on screen. */
+   This file never sees an answer key for a gradable problem. The one grading
+   rule it must respect (PROJECT.md 5.3): a response of "unparseable" is NOT
+   an attempt — keep the student's text so they can fix the typo, and change
+   nothing else on screen. */
 
 const S = {
   student: null,
   displayName: null,
   graphReady: false,
-  practice: null,   // {problemId, node, streak}
+  practice: null,   // {problemId, node, done: null|"mastered"|"revealed"}
 };
-
-const $ = (id) => document.getElementById(id);
-
-async function api(path, body) {
-  const opts = body
-    ? { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body) }
-    : {};
-  let r;
-  try {
-    r = await fetch(path, opts);
-  } catch {
-    return { error: "server_unreachable" };
-  }
-  let data = null;
-  try { data = await r.json(); } catch { data = null; }
-  // A static file server (Live Server etc.) answers /api/* with an HTML 404
-  // or a 405 — non-JSON either way. Surface that as its own condition so the
-  // UI can explain it instead of blaming the student's input.
-  if (data === null) return { error: r.ok ? "bad_response" : `http_${r.status}` };
-  if (!r.ok && !data.error) data.error = `http_${r.status}`;
-  return data;
-}
-
-function serverDown(err) {
-  return err === "server_unreachable" || err === "bad_response"
-      || /^http_(404|405|5\d\d)$/.test(err || "");
-}
-
-function showServerWarning() {
-  show("screen-login");
-  $("login-card").hidden = true;
-  $("warn-origin").textContent = location.origin;
-  $("server-warning").hidden = false;
-}
 
 function show(screen) {
   for (const id of ["screen-login", "screen-diagnostic", "screen-graph"]) {
     $(id).hidden = id !== screen;
   }
-}
-
-function toast(msg, ms = 3200) {
-  const t = $("toast");
-  t.textContent = msg;
-  t.hidden = false;
-  clearTimeout(t._timer);
-  t._timer = setTimeout(() => { t.hidden = true; }, ms);
-}
-
-function escapeHtml(s) {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-/* "23^45231" reads badly as plain text; superscript the exponent and swap
-   ASCII comparators for real symbols. The whole corpus is plain text with
-   carets — this is the entire math renderer. */
-function pretty(prompt) {
-  return escapeHtml(prompt)
-    .replace(/(\d+)\^(-?\w+)/g, "$1<sup>$2</sup>")
-    .replace(/&lt;=/g, "≤")
-    .replace(/&gt;=/g, "≥");
 }
 
 function feedback(elId, msg, kind) {
@@ -146,7 +89,7 @@ async function submitDiagnostic(skip) {
   const r = await api("/api/diagnostic/answer", payload);
 
   if (serverDown(r.error)) {
-    toast("Lost the server — is python3 web/app.py still running?");
+    toast("Lost the server — is python3 backend/app.py still running?");
     return;
   }
   if (r.error === "problem_expired") { startDiagnostic(); return; }
@@ -157,9 +100,13 @@ async function submitDiagnostic(skip) {
     return;
   }
   if (r.done) { enterGraph(r.status, r.summary); return; }
-  feedback("diag-feedback", skip ? "Skipped." : (r.grade === "correct" ? "✓" : "✗"),
+  // one answer moves many nodes — say so; this is the model working
+  const movedN = r.moved ? Object.keys(r.moved).length : 0;
+  const movedTxt = movedN ? ` — updated ${movedN} skill${movedN === 1 ? "" : "s"}` : "";
+  feedback("diag-feedback",
+           (skip ? "Skipped." : (r.grade === "correct" ? "✓" : "✗")) + movedTxt,
            r.grade === "correct" ? "good" : "bad");
-  setTimeout(() => renderQuestion(r), 450);
+  setTimeout(() => renderQuestion(r), 650);
 }
 
 $("diag-form").addEventListener("submit", (e) => { e.preventDefault(); submitDiagnostic(false); });
@@ -214,14 +161,15 @@ function drawPips(streak, shake) {
 async function openPractice(node) {
   const r = await api(`/api/problem?student=${S.student}&node=${node}`);
   if (serverDown(r.error)) {
-    toast("Lost the server — is python3 web/app.py still running?");
+    toast("Lost the server — is python3 backend/app.py still running?");
     return;
   }
   if (r.error) { toast("That node isn't available yet."); return; }
   $("summary-card").hidden = true;
   $("pick-card").hidden = true;
   $("practice-card").hidden = false;
-  S.practice = { problemId: r.problem.problem_id, node: r.problem.node };
+  S.practice = { problemId: r.problem.problem_id, node: r.problem.node,
+                 done: null };
   $("prac-node").textContent = r.problem.node_name;
   $("prac-prompt").innerHTML = pretty(r.problem.prompt);
   $("prac-format").textContent = r.problem.answer_format || "";
@@ -229,6 +177,10 @@ async function openPractice(node) {
   $("prac-answer").disabled = false;
   $("prac-answer").focus();
   $("prac-hint").hidden = true;
+  $("prac-steps").hidden = true;
+  $("prac-steps").innerHTML = "";
+  disarmReveal();
+  $("prac-reveal").hidden = false;
   $("prac-next").hidden = true;
   feedback("prac-feedback", "", "");
   drawPips(r.streak, false);
@@ -237,6 +189,7 @@ async function openPractice(node) {
 $("prac-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!S.practice) return;
+  disarmReveal();
   const answer = $("prac-answer").value.trim();
   if (!answer) {
     feedback("prac-feedback", 'Type an answer — "none" counts when nothing works.', "info");
@@ -246,7 +199,7 @@ $("prac-form").addEventListener("submit", async (e) => {
     { student: S.student, problem_id: S.practice.problemId, answer });
 
   if (serverDown(r.error)) {
-    toast("Lost the server — is python3 web/app.py still running?");
+    toast("Lost the server — is python3 backend/app.py still running?");
     return;
   }
   if (r.error === "problem_expired") { openPractice(S.practice.node); return; }
@@ -258,12 +211,21 @@ $("prac-form").addEventListener("submit", async (e) => {
   }
 
   if (r.status) NTGraph.paint(r.status);
+  NTGraph.ripple(r.moved);
 
   if (r.grade === "correct") {
     drawPips(r.streak, false);
     if (r.just_mastered) {
-      feedback("prac-feedback", "Mastered — 3 in a row!", "good");
+      S.practice.done = "mastered";
+      // the model decides mastery now — it can land on streak 2 after a
+      // strong diagnostic, so the copy claims confidence, not a count
+      const pm = r.status && r.status.nodes[S.practice.node]
+        ? r.status.nodes[S.practice.node].p : 0.95;
+      feedback("prac-feedback",
+               `Mastered — the model is ${Math.round(pm * 100)}% sure you've got this.`,
+               "good");
       $("prac-answer").disabled = true;
+      $("prac-reveal").hidden = true;
       if (r.newly_unlocked.length) {
         NTGraph.celebrate(r.newly_unlocked);
         toast(`Unlocked: ${r.newly_unlocked.map((n) => n.replace(/_/g, " ")).join(", ")}`);
@@ -283,14 +245,81 @@ $("prac-form").addEventListener("submit", async (e) => {
       $("prac-hint").textContent = r.hint;
       $("prac-hint").hidden = false;
     }
+    // the problem is retired server-side, so there is nothing to reveal
+    $("prac-reveal").hidden = true;
     $("prac-next").textContent = "Next problem";
     $("prac-next").hidden = false;
   }
 });
 
+/* --------------------------------------------------------------- reveal */
+/* Two-step confirm: the first click arms the button and shows the cost,
+   the second actually surrenders. Anything else — submitting, 4 seconds of
+   hesitation, a new problem — disarms it. */
+
+let revealTimer = null;
+
+function disarmReveal() {
+  clearTimeout(revealTimer);
+  const b = $("prac-reveal");
+  b.classList.remove("armed");
+  b.innerHTML = 'Stuck? Show the steps <span class="cost">(streak resets to 0)</span>';
+}
+
+$("prac-reveal").addEventListener("click", () => {
+  if (!S.practice || S.practice.done) return;
+  const b = $("prac-reveal");
+  if (!b.classList.contains("armed")) {
+    b.classList.add("armed");
+    b.textContent = "Click again to reveal — your streak goes to 0";
+    clearTimeout(revealTimer);
+    revealTimer = setTimeout(disarmReveal, 4000);
+    return;
+  }
+  disarmReveal();
+  revealProblem();
+});
+
+async function revealProblem() {
+  const r = await api("/api/reveal",
+    { student: S.student, problem_id: S.practice.problemId });
+
+  if (serverDown(r.error)) {
+    toast("Lost the server — is python3 backend/app.py still running?");
+    return;
+  }
+  if (r.error === "problem_expired") { openPractice(S.practice.node); return; }
+  if (r.error) { toast(`Couldn't reveal (${r.error}).`); return; }
+
+  if (r.status) NTGraph.paint(r.status);
+  NTGraph.ripple(r.moved);        // the drop propagates — show it
+  drawPips(0, true);              // the cost is a visible mechanic (5.3)
+  S.practice.done = "revealed";
+  $("prac-answer").disabled = true;
+  $("prac-reveal").hidden = true;
+  $("prac-hint").hidden = true;
+  feedback("prac-feedback", "Streak reset — here's the full working.", "info");
+
+  const holder = $("prac-steps");
+  holder.innerHTML = "";
+  for (const line of r.steps) {
+    const d = document.createElement("div");
+    d.className = "step";
+    d.innerHTML = pretty(line);
+    holder.appendChild(d);
+  }
+  holder.hidden = false;
+
+  $("prac-next").textContent = "Next problem";
+  $("prac-next").hidden = false;
+}
+
 $("prac-next").addEventListener("click", () => {
-  if ($("prac-answer").disabled) {
-    // just mastered: back to node picking
+  if (!S.practice) return;
+  if (S.practice.done === "mastered") {
+    // just mastered: back to node picking. (Branch on done, not on the
+    // disabled input — a reveal also disables the input but should serve
+    // the next problem.)
     $("practice-card").hidden = true;
     $("pick-card").hidden = false;
     S.practice = null;
@@ -301,18 +330,16 @@ $("prac-next").addEventListener("click", () => {
 
 /* ----------------------------------------------------------------- start */
 
-(async function boot() {
-  // Before anything else: is the thing serving this page actually the app?
-  // If not (Live Server, python -m http.server, ...), explain — nothing
-  // else on this page can work without the Flask process.
-  const health = await api("/api/health");
-  if (health.ok !== true) { showServerWarning(); return; }
-
-  const saved = localStorage.getItem("nt_name");
-  if (saved) {
-    const r = await api("/api/login", { name: saved });
+/* A known name logs straight back in (the server replays their state —
+   mid-diagnostic resumes, otherwise the graph); a new visitor gets the
+   login form. */
+window.pageInit = async function () {
+  const name = localStorage.getItem("nt_name");
+  if (name) {
+    const r = await api("/api/login", { name });
+    if (serverDown(r.error)) { showServerWarning(); return; }
     if (!r.error) { enter(r); return; }
   }
   show("screen-login");
   $("login-name").focus();
-})();
+};

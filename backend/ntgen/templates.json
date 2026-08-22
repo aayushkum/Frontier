@@ -26,7 +26,7 @@
       "derived": {
         "b": "a*k + r"
       },
-      "solution": "1 if r == 0 else 0",
+      "solution": "1 if b % a == 0 else 0",
       "checker": "exact",
       "hint": "a divides b exactly when b leaves remainder 0 on division by a. Try the division and look at what is left over."
     },

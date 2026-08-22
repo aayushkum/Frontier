@@ -60,11 +60,12 @@ If a judge asks "how is this different from Alcumus," that is the answer. Have i
 
 ## 3. The curriculum
 
-Two artifacts, kept in sync. **The doc is the source of truth; the JSON follows it.**
+Three artifacts, kept in sync. **The doc is the source of truth; the others follow it.**
 
 | Artifact | Purpose |
 |---|---|
 | `VoltHacks — Number Theory Curriculum (v0.1 draft)` (Google Doc) | Human-editable. Full teaching content per node. |
+| `backend/ntgen/curriculum.md` | In-repo transcription of the doc. Parsed at boot and served at `/api/curriculum` — this is what students read in the app's Learn direction. The gate validates its ids, tiers, and prereq edges against the DAG. |
 | `number-theory-dag.json` | Machine-readable. Loaded directly by the app. |
 
 Google Doc: https://docs.google.com/document/d/1Gx_azLCG9ULTTORTU8p1uzRtQBfm2Y3rQdRHFQxlG7o/edit
@@ -221,9 +222,9 @@ This visualization *is* the demo. Alcumus does not show it. Build it well.
 
 ### 5.3 Mastery rule
 
-Decided. Four choices, frozen together:
+Decided. Five choices, frozen together:
 
-**Threshold: three consecutive correct per node.** Frozen — it must not change during user testing or results collected before and after the change stop being comparable. It lives as one named constant in code (`MASTERY_STREAK` in `ntgen/graph.py`) and nowhere else.
+**Threshold: three consecutive correct per node.** Frozen — it must not change during user testing or results collected before and after the change stop being comparable. It lives as one named constant in code (`MASTERY_STREAK` in `backend/ntgen/graph.py`) and nowhere else.
 
 **Reset: a wrong answer resets the streak to zero,** not decrement-by-one. "Three in a row" is a defensible, sayable mastery claim; decrement-by-one lets a student alternate right and wrong indefinitely without ever mastering or failing.
 
@@ -233,7 +234,16 @@ Decided. Four choices, frozen together:
 
 *Accuracy caveat:* a 3-streak means three consecutive correct, **not** a clean record on the node — a student may miss several times and then master it. UI copy should say "3 in a row," never "perfect."
 
-### 5.4 Hint system (stretch — week 3 only)
+**Reveal (give up) — decided 2026-08-19.** In practice only — never during the diagnostic — a student may surrender the current problem at any time and see a full worked solution, computed by Python (`backend/ntgen/steps.py`), never by an LLM. The cost: the node's streak resets to zero. A surrender is **not** an attempt (attempts/correct stay untouched, it is never recorded as a wrong answer); it is logged to `events.jsonl` as its own event kind `revealed` — week-3 accuracy scripts must exclude it from the correct/wrong/unparseable enum, and "which templates get surrendered on" is itself a too-hard signal worth reading. The server **retires the problem before the solution leaves it** (a revealed problem can never be graded, even after a restart), which is how this coexists with the answers-never-leave-the-server rule: that rule now reads "answers for *gradable* problems never leave the server." The cost is per-node, not per-reveal — once the streak is 0, further reveals cost nothing more; that is fine because mastery still requires three unaided corrects, so reveals can never light up a node.
+
+**Bayesian Knowledge Tracing — decided 2026-08-22 (Phase 2B, supersedes the streak as the *mechanic*).** Mastery is now `P(mastered) ≥ 0.95` per node, from a BKT model (`backend/ntgen/bkt.py`, spec + as-built deltas in `BKT_SPEC.md`) whose evidence propagates along the prerequisite edges. Four sub-decisions, made together:
+
+1. *BKT decides mastery; the streak is UI.* The pips and the reset-to-zero mechanic stay on screen exactly as before, but they no longer gate anything. The pacing is preserved as a checked theorem, not a hope: with the shipped parameters, three consecutive corrects cross 0.95 from **any** prior (and two from a cold prior never do), so "about 3 in a row" remains true — while a strong diagnostic can earn a 2-correct mastery and a struggling run can take more. `selftest.py check_bkt` gates this bound.
+2. *Learning transition on correct answers only* (documented deviation from textbook BKT). A wrong answer strictly lowers P — no node ever brightens after a miss.
+3. *A reveal is evidence.* Surrendering applies the wrong-answer posterior (no learning credit) and propagates. Still not an attempt; the streak wipe stays.
+4. *Sticky unlock, honest colour.* Once unlocked, a node never re-locks (the per-student `unlocked` set only grows), but its fill colour always shows current P — a mastered node can honestly fade below threshold and needs at most 3 corrects to re-cross.
+
+Still frozen from the original five: reset-to-zero on a wrong answer (now both streak and posterior), and unparseable-is-not-an-attempt (the model never sees a typo). The diagnostic keeps its proven graph-bisection sets and adds live BKT observation; because backward propagation maxes at 0.85·P < 0.95, the finish **calibrates** priors from the sets (tested 0.96 / inferred 0.95 / unknown capped 0.40) — without that step no student could ever unlock past the root. Cut order: if BKT breaks before demo day, revert to the streak mechanic (`MASTERY_STREAK` and `record_answer` still fully maintain it under the hood — the cut is one payload change, not a rebuild).
 
 When a student is stuck at their frontier, the LLM gives a nudge based on **which prerequisite they are weakest at**, not the answer. This is genuinely differentiated, it *uses* the DAG rather than sitting beside it, and it was impossible in a 24-hour hackathon. This is where slack time goes — not into a second subject.
 

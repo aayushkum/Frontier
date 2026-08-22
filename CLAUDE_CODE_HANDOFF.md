@@ -10,15 +10,15 @@
 
 ### 0.1 What already exists and MUST NOT be rewritten
 
-There is working, tested code in `ntgen/`. It passes 300 trials per template on 6 templates. **Do not regenerate these files from scratch.** Extend them.
+There is working, tested code in `backend/ntgen/`. It passes 300 trials per template on 6 templates. **Do not regenerate these files from scratch.** Extend them.
 
 | File | Status | Rule |
 |---|---|---|
-| `ntgen/verify.py` | working | Extend with new checkers. Do not change `safe_eval`'s sandbox model. |
-| `ntgen/generator.py` | working | Extend. Sampling/derivation/constraint flow is correct as-is. |
-| `ntgen/templates.json` | 6 of ~22 templates | Add templates. Keep the schema exactly. |
-| `ntgen/selftest.py` | working | Extend coverage. This is the quality gate. |
-| `ntgen/demo.py` | working | Keep runnable at all times. |
+| `backend/ntgen/verify.py` | working | Extend with new checkers. Do not change `safe_eval`'s sandbox model. |
+| `backend/ntgen/generator.py` | working | Extend. Sampling/derivation/constraint flow is correct as-is. |
+| `backend/ntgen/templates.json` | 6 of ~22 templates | Add templates. Keep the schema exactly. |
+| `backend/ntgen/selftest.py` | working | Extend coverage. This is the quality gate. |
+| `backend/ntgen/demo.py` | working | Keep runnable at all times. |
 
 If you believe one of these files is wrong, **say so and explain why before changing it.** Do not silently refactor.
 
@@ -100,7 +100,7 @@ Record the predicted wrong value in the template's `distractor_note` field. Phas
 
 **Goal:** load the DAG, track per-student mastery, compute the frontier.
 
-Build `ntgen/graph.py`:
+Build `backend/ntgen/graph.py`:
 
 - `load_graph(path)` — parse `number-theory-dag.json`
 - `validate()` — **assert the graph is acyclic and every prereq id exists.** Run this in `selftest.py`. A typo'd prereq id would silently make a node permanently unreachable.
@@ -164,7 +164,7 @@ Render math with KaTeX or MathJax.
 
 **Deliberately last.** Everything above works without a model. This phase adds scale, not function.
 
-Build `ntgen/authoring.py`:
+Build `backend/ntgen/authoring.py`:
 - Prompt an LLM with the node's curriculum entry (concept, assesses, common mistakes) and the exact `templates.json` schema
 - Model returns a **template**, never a problem, never an answer
 - Pipe output directly into `selftest.py`

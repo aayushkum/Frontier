@@ -343,6 +343,20 @@ def record_answer(mastery: dict, node_id: str, correct: bool) -> bool:
     return False
 
 
+def reset_streak(mastery: dict, node_id: str) -> None:
+    """
+    The cost of a reveal (give up): streak to zero, nothing else.
+
+    A surrender is NOT an attempt (PROJECT.md 5.3 defines attempts as
+    parseable submissions), so attempts/correct/mastered stay untouched and
+    week-3 accuracy stats stay clean — record_answer remains the only
+    attempt-writer. No mastered-guard: mastery is sticky and progress()
+    reports "mastered" regardless of streak, so revealing while re-practising
+    a mastered node is harmless.
+    """
+    mastery[node_id]["streak"] = 0
+
+
 def set_mastered(mastery: dict, node_id: str, value: bool, source: str) -> None:
     """
     Set mastery directly, without answering questions. Only the diagnostic
