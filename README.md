@@ -103,5 +103,5 @@ Our first main challenge of the project was the sheer size of mathematics, and h
 
 Despite initial attempts at connection with Gemini, API difficulties mean our project couldn't connect to it for successful implementation of AI. In order to bypass this issue, we established a connection with Claude instead, using their API to provide our analysis of the users level, alongside creating new questions. Our final project uses Claude, despite challenges around initial API connection.
 
-## What's next for Mathematical Frontier
+## What's next for Frontier
 Expanding the focus beyond Number Theory. The efficiency of the project appears very optimistic, and we are sure we could use it to conduct all kinds of mathematical pedagogy. The main constraint here isn't that the product couldn't cover more areas of mathematics, but that human developers cannot input huge levels of information from all areas of mathematics in a structured way without a concrete timeline or funding. However, given a large enough time frame, we are certain we can begin this, creating a huge product, that will impact high school, undergraduate and graduate math students learn more, succeed in math competitions and boost their passion.
