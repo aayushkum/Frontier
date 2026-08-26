@@ -17,7 +17,6 @@ Rather than utilizng a linear quiz, we model number theory as a 35-node prerequi
   "prereqs": ["factorization", "congruence"]
 }
 ```
-
 ```mermaid
 flowchart LR
     Divisibility --> Primes
@@ -29,19 +28,19 @@ flowchart LR
     Bezout --> LinDio["Linear Diophantine"]
     LinDio --> LinCong["Linear Congruence"]
     LinCong --> CRT
-    Factorization --> DivSum["Divisor Count & Sum"]
+    Factorization --> DivSum["Divisor Count and Sum"]
 
     Divisibility --> Bases
     Bases --> DigitRules["Digit Rules"]
     Bases --> ModExp["Modular Exponentiation"]
-    ModExp --> FLT["Fermat's Little Theorem"]
+    ModExp --> FLT["Fermats Little Theorem"]
 
     Congruence --> ModArith["Modular Arithmetic"]
     ModArith --> ModExp
     ModArith --> ModInv["Modular Inverse"]
     ModInv --> LinCong
-    Congruence --> Totient["Euler's Totient"]
-    Totient --> EulerThm["Euler's Theorem"]
+    Congruence --> Totient["Eulers Totient"]
+    Totient --> EulerThm["Eulers Theorem"]
     EulerThm --> MultOrder["Multiplicative Order"]
     Congruence --> Pigeonhole["Pigeonhole in Number Theory"]
 
@@ -49,14 +48,14 @@ flowchart LR
     Factorization --> Totient
 
     ModExp --> PAdic["p-adic Valuation"]
-    PAdic --> Legendre["Legendre's Formula"]
+    PAdic --> Legendre["Legendres Formula"]
     Legendre --> LTE
 
     FLT --> EulerThm
-    FLT --> Wilson["Wilson's Theorem"]
+    FLT --> Wilson["Wilsons Theorem"]
 
     EulerThm --> QR["Quadratic Residues"]
-    QR --> LegSym["Legendre Symbol & Reciprocity"]
+    QR --> LegSym["Legendre Symbol and Reciprocity"]
     QR --> SumSquares["Sum of Two Squares"]
     EulerThm --> PrimRoots["Primitive Roots"]
 
@@ -64,8 +63,8 @@ flowchart LR
     MultOrder --> QR
     MultOrder --> PrimRoots
 
-    DivSum --> Mobius["Multiplicative Functions & Möbius"]
-    Mobius --> MobiusInv["Möbius Inversion"]
+    DivSum --> Mobius["Multiplicative Functions and Mobius"]
+    Mobius --> MobiusInv["Mobius Inversion"]
 
     LinDio --> Vieta["Infinite Descent / Vieta Jumping"]
     QR --> Vieta
@@ -78,25 +77,25 @@ flowchart LR
     EulerThm --> RSA
     ModInv --> RSA
 
-    classDef base fill:#79c0ff,stroke:#333,color:#0d1117;
-    classDef gcd fill:#a5d6ff,stroke:#333,color:#0d1117;
-    classDef mod fill:#d2a8ff,stroke:#333,color:#0d1117;
-    classDef bez fill:#ffa657,stroke:#333,color:#0d1117;
-    classDef euler fill:#7ee787,stroke:#333,color:#0d1117;
-    classDef fermat fill:#f778ba,stroke:#333,color:#0d1117;
-    classDef qr fill:#ffd33d,stroke:#333,color:#0d1117;
-    classDef mobius fill:#ff7b72,stroke:#333,color:#0d1117;
-    classDef rsa fill:#39d353,stroke:#333,color:#0d1117;
+    classDef base fill:#79c0ff,stroke:#333,color:#0d1117
+    classDef gcd fill:#a5d6ff,stroke:#333,color:#0d1117
+    classDef mod fill:#d2a8ff,stroke:#333,color:#0d1117
+    classDef bez fill:#ffa657,stroke:#333,color:#0d1117
+    classDef euler fill:#7ee787,stroke:#333,color:#0d1117
+    classDef fermat fill:#f778ba,stroke:#333,color:#0d1117
+    classDef qr fill:#ffd33d,stroke:#333,color:#0d1117
+    classDef mobius fill:#ff7b72,stroke:#333,color:#0d1117
+    classDef rsa fill:#39d353,stroke:#333,color:#0d1117
 
-    class Divisibility,Primes,Bases,Factorization,DivSum,Sieve base;
-    class GCDLCM,Euclidean gcd;
-    class Congruence,ModArith,ModExp,DigitRules mod;
-    class Bezout,LinDio,LinCong,CRT,ModInv,Vieta bez;
-    class Totient,EulerThm,MultOrder,Pigeonhole euler;
-    class FLT,Wilson,PAdic,Legendre,LTE fermat;
-    class QR,LegSym,SumSquares,PrimRoots qr;
-    class Mobius,MobiusInv mobius;
-    class PPT,RSA rsa;
+    class Divisibility,Primes,Bases,Factorization,DivSum,Sieve base
+    class GCDLCM,Euclidean gcd
+    class Congruence,ModArith,ModExp,DigitRules mod
+    class Bezout,LinDio,LinCong,CRT,ModInv,Vieta bez
+    class Totient,EulerThm,MultOrder,Pigeonhole euler
+    class FLT,Wilson,PAdic,Legendre,LTE fermat
+    class QR,LegSym,SumSquares,PrimRoots qr
+    class Mobius,MobiusInv mobius
+    class PPT,RSA rsa
 ```
 
 ## Challenges we ran into
