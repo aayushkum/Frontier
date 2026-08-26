@@ -17,6 +17,7 @@ Rather than utilizng a linear quiz, we model number theory as a 35-node prerequi
   "prereqs": ["factorization", "congruence"]
 }
 ```
+
 ```mermaid
 flowchart LR
     Divisibility --> Primes
