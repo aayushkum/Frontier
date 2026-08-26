@@ -20,28 +20,29 @@ Rather than utilizng a linear quiz, we model number theory as a 35-node prerequi
 
 ```mermaid
 flowchart LR
-    Divisibility --> Primes
-    Primes --> Factorization
+
+    Divisibility["Divisibility"] --> Primes["Primes"]
+    Primes --> Factorization["Factorization"]
     Factorization --> GCDLCM["GCD / LCM"]
     GCDLCM --> Euclidean["Euclidean Algorithm"]
-    Euclidean --> Congruence
-    Euclidean --> Bezout
-    Bezout --> LinDio["Linear Diophantine"]
+    Euclidean --> Congruence["Congruence"]
+    Euclidean --> Bezout["Bézout's Identity"]
+    Bezout --> LinDio["Linear Diophantine Equations"]
     LinDio --> LinCong["Linear Congruence"]
-    LinCong --> CRT
+    LinCong --> CRT["Chinese Remainder Theorem"]
     Factorization --> DivSum["Divisor Count and Sum"]
 
-    Divisibility --> Bases
+    Divisibility --> Bases["Number Bases"]
     Bases --> DigitRules["Digit Rules"]
     Bases --> ModExp["Modular Exponentiation"]
-    ModExp --> FLT["Fermats Little Theorem"]
+    ModExp --> FLT["Fermat's Little Theorem"]
 
     Congruence --> ModArith["Modular Arithmetic"]
     ModArith --> ModExp
     ModArith --> ModInv["Modular Inverse"]
     ModInv --> LinCong
-    Congruence --> Totient["Eulers Totient"]
-    Totient --> EulerThm["Eulers Theorem"]
+    Congruence --> Totient["Euler's Totient"]
+    Totient --> EulerThm["Euler's Theorem"]
     EulerThm --> MultOrder["Multiplicative Order"]
     Congruence --> Pigeonhole["Pigeonhole in Number Theory"]
 
@@ -49,11 +50,11 @@ flowchart LR
     Factorization --> Totient
 
     ModExp --> PAdic["p-adic Valuation"]
-    PAdic --> Legendre["Legendres Formula"]
-    Legendre --> LTE
+    PAdic --> Legendre["Legendre's Formula"]
+    Legendre --> LTE["Lifting the Exponent"]
 
     FLT --> EulerThm
-    FLT --> Wilson["Wilsons Theorem"]
+    FLT --> Wilson["Wilson's Theorem"]
 
     EulerThm --> QR["Quadratic Residues"]
     QR --> LegSym["Legendre Symbol and Reciprocity"]
@@ -64,8 +65,8 @@ flowchart LR
     MultOrder --> QR
     MultOrder --> PrimRoots
 
-    DivSum --> Mobius["Multiplicative Functions and Mobius"]
-    Mobius --> MobiusInv["Mobius Inversion"]
+    DivSum --> Mobius["Multiplicative Functions and Möbius"]
+    Mobius --> MobiusInv["Möbius Inversion"]
 
     LinDio --> Vieta["Infinite Descent / Vieta Jumping"]
     QR --> Vieta
@@ -74,29 +75,9 @@ flowchart LR
 
     FLT --> PPT["Probabilistic Primality Testing"]
     ModExp --> PPT
-    PPT --> RSA
+    PPT --> RSA["RSA Algorithm"]
     EulerThm --> RSA
     ModInv --> RSA
-
-    classDef base fill:#79c0ff,stroke:#333,color:#0d1117
-    classDef gcd fill:#a5d6ff,stroke:#333,color:#0d1117
-    classDef mod fill:#d2a8ff,stroke:#333,color:#0d1117
-    classDef bez fill:#ffa657,stroke:#333,color:#0d1117
-    classDef euler fill:#7ee787,stroke:#333,color:#0d1117
-    classDef fermat fill:#f778ba,stroke:#333,color:#0d1117
-    classDef qr fill:#ffd33d,stroke:#333,color:#0d1117
-    classDef mobius fill:#ff7b72,stroke:#333,color:#0d1117
-    classDef rsa fill:#39d353,stroke:#333,color:#0d1117
-
-    class Divisibility,Primes,Bases,Factorization,DivSum,Sieve base
-    class GCDLCM,Euclidean gcd
-    class Congruence,ModArith,ModExp,DigitRules mod
-    class Bezout,LinDio,LinCong,CRT,ModInv,Vieta bez
-    class Totient,EulerThm,MultOrder,Pigeonhole euler
-    class FLT,Wilson,PAdic,Legendre,LTE fermat
-    class QR,LegSym,SumSquares,PrimRoots qr
-    class Mobius,MobiusInv mobius
-    class PPT,RSA rsa
 ```
 
 ## Challenges we ran into
