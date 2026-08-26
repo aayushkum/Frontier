@@ -18,6 +18,87 @@ Rather than utilizng a linear quiz, we model number theory as a 35-node prerequi
 }
 ```
 
+```mermaid
+flowchart LR
+    Divisibility --> Primes
+    Primes --> Factorization
+    Factorization --> GCDLCM["GCD / LCM"]
+    GCDLCM --> Euclidean["Euclidean Algorithm"]
+    Euclidean --> Congruence
+    Euclidean --> Bezout
+    Bezout --> LinDio["Linear Diophantine"]
+    LinDio --> LinCong["Linear Congruence"]
+    LinCong --> CRT
+    Factorization --> DivSum["Divisor Count & Sum"]
+
+    Divisibility --> Bases
+    Bases --> DigitRules["Digit Rules"]
+    Bases --> ModExp["Modular Exponentiation"]
+    ModExp --> FLT["Fermat's Little Theorem"]
+
+    Congruence --> ModArith["Modular Arithmetic"]
+    ModArith --> ModExp
+    ModArith --> ModInv["Modular Inverse"]
+    ModInv --> LinCong
+    Congruence --> Totient["Euler's Totient"]
+    Totient --> EulerThm["Euler's Theorem"]
+    EulerThm --> MultOrder["Multiplicative Order"]
+    Congruence --> Pigeonhole["Pigeonhole in Number Theory"]
+
+    Bezout --> ModInv
+    Factorization --> Totient
+
+    ModExp --> PAdic["p-adic Valuation"]
+    PAdic --> Legendre["Legendre's Formula"]
+    Legendre --> LTE
+
+    FLT --> EulerThm
+    FLT --> Wilson["Wilson's Theorem"]
+
+    EulerThm --> QR["Quadratic Residues"]
+    QR --> LegSym["Legendre Symbol & Reciprocity"]
+    QR --> SumSquares["Sum of Two Squares"]
+    EulerThm --> PrimRoots["Primitive Roots"]
+
+    MultOrder --> LTE
+    MultOrder --> QR
+    MultOrder --> PrimRoots
+
+    DivSum --> Mobius["Multiplicative Functions & Möbius"]
+    Mobius --> MobiusInv["Möbius Inversion"]
+
+    LinDio --> Vieta["Infinite Descent / Vieta Jumping"]
+    QR --> Vieta
+
+    Primes --> Sieve["Sieve of Eratosthenes"]
+
+    FLT --> PPT["Probabilistic Primality Testing"]
+    ModExp --> PPT
+    PPT --> RSA
+    EulerThm --> RSA
+    ModInv --> RSA
+
+    classDef base fill:#79c0ff,stroke:#333,color:#0d1117;
+    classDef gcd fill:#a5d6ff,stroke:#333,color:#0d1117;
+    classDef mod fill:#d2a8ff,stroke:#333,color:#0d1117;
+    classDef bez fill:#ffa657,stroke:#333,color:#0d1117;
+    classDef euler fill:#7ee787,stroke:#333,color:#0d1117;
+    classDef fermat fill:#f778ba,stroke:#333,color:#0d1117;
+    classDef qr fill:#ffd33d,stroke:#333,color:#0d1117;
+    classDef mobius fill:#ff7b72,stroke:#333,color:#0d1117;
+    classDef rsa fill:#39d353,stroke:#333,color:#0d1117;
+
+    class Divisibility,Primes,Bases,Factorization,DivSum,Sieve base;
+    class GCDLCM,Euclidean gcd;
+    class Congruence,ModArith,ModExp,DigitRules mod;
+    class Bezout,LinDio,LinCong,CRT,ModInv,Vieta bez;
+    class Totient,EulerThm,MultOrder,Pigeonhole euler;
+    class FLT,Wilson,PAdic,Legendre,LTE fermat;
+    class QR,LegSym,SumSquares,PrimRoots qr;
+    class Mobius,MobiusInv mobius;
+    class PPT,RSA rsa;
+```
+
 ## Challenges we ran into
 Our first main challenge of the project was the sheer size of mathematics, and how much could be taught to students. We solved this challenge by hyper-focusing on Number Theory, allowing students to turn school knowledge into high level mathematical knowledge, used for computer cryptography and very relevant in mathematical competitions. This wasn't an application problem per se, computing power could handle much more than what is currently given, but a human problem, as we couldn't interpret all of mathematics into a Directed Acylic Graph within the given time frame.
 
