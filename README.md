@@ -19,7 +19,7 @@ Rather than utilizng a linear quiz, we model number theory as a 35-node prerequi
 ```
 
 ## Challenges we ran into
-Our first main challenge of the project was the sheer size of mathematics, and how much could be taught to students. We solved this challenge by hyper-focusing on Number Theory, allowing students to turn school knowledge into high level mathematical knowledge, used for computer cryptography and very relevant in mathematical competitions. This wasn't an application problem per se, computing power could handle much more than what is currently given, but a human problem, as we couldn't interpret all of mathematics into a Directed Acrylic Graph within the given time frame.
+Our first main challenge of the project was the sheer size of mathematics, and how much could be taught to students. We solved this challenge by hyper-focusing on Number Theory, allowing students to turn school knowledge into high level mathematical knowledge, used for computer cryptography and very relevant in mathematical competitions. This wasn't an application problem per se, computing power could handle much more than what is currently given, but a human problem, as we couldn't interpret all of mathematics into a Directed Acylic Graph within the given time frame.
 
 Despite initial attempts at connection with Gemini, API difficulties mean our project couldn't connect to it for successful implementation of AI. In order to bypass this issue, we established a connection with Claude instead, using their API to provide our analysis of the users level, alongside creating new questions. Our final project uses Claude, despite challenges around initial API connection.
 
